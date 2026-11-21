@@ -25,6 +25,37 @@ export interface SeedOptions {
   userPassword?: string;
 }
 
+/** What the local-only seed needs: the seed options plus the server the provisioner creates databases on. */
+export interface LocalSeedOptions extends SeedOptions {
+  /** TENANT_DB_ADMIN_URL: the superuser login the provisioner creates company databases with. */
+  adminUrl: string;
+}
+
+/** The DB_PROVIDER values the local seed accepts: plain PostgreSQL on this machine, or no provisioning. */
+const LOCAL_PROVIDERS: ReadonlySet<string> = new Set(["postgres", "noop"]);
+
+/**
+ * Why the local seed must not run with these options, or null when it may: the control database
+ * and the provisioner's server must be on this machine and the provider plain PostgreSQL or noop.
+ * The message names variables, never URLs, which hold passwords.
+ */
+export function localSeedRefusal(options: LocalSeedOptions): string | null {
+  const notLocal = [
+    isLocalDatabaseUrl(options.controlUrl) ? null : "CONTROL_DATABASE_URL",
+    isLocalDatabaseUrl(options.adminUrl) ? null : "TENANT_DB_ADMIN_URL",
+  ].filter((name) => name !== null);
+  if (notLocal.length > 0) {
+    return (
+      "Harbor Staffing Co. and the platform admin are seeded only into databases on this machine " +
+      `(localhost or 127.0.0.1); ${notLocal.join(" and ")} ${notLocal.length > 1 ? "are" : "is"} not.`
+    );
+  }
+  if (!LOCAL_PROVIDERS.has(options.provider)) {
+    return "Harbor Staffing Co. and the platform admin are seeded only with DB_PROVIDER postgres or noop.";
+  }
+  return null;
+}
+
 /** What the local-only seed wrote: Harbor's tenant id and the platform admin's user id. */
 export interface LocalSeedResult {
   harborTenantId: string;
@@ -76,17 +107,15 @@ export async function seedTestCompany(options: SeedOptions): Promise<string> {
 /**
  * The local-testing seed (ADR 0065): the HR Suite company Harbor Staffing Co. with its own
  * database and people, and an invented platform admin whose home company is Summit (an Employee
- * there), so they can sign in until the admin host exists. Run it after seedTestCompany. Refuses, before
- * it connects anywhere, a control database that is not on this machine, so it never reaches a
- * shared or production server. Safe to run again: ids are stable and existing rows are kept.
+ * there), so they can sign in until the admin host exists. Run it after seedTestCompany. Refuses,
+ * before it connects or writes anywhere, a control database or provisioning server that is not on
+ * this machine and any provider but postgres or noop (`localSeedRefusal`), so it never reaches a
+ * shared or production server. Any port on localhost passes: never run it through a tunnel or port
+ * forward to a remote database (ADR 0065). Safe to run again: ids are stable and existing rows are kept.
  */
-export async function seedLocalTestData(options: SeedOptions): Promise<LocalSeedResult> {
-  if (!isLocalDatabaseUrl(options.controlUrl)) {
-    throw new Error(
-      "Harbor Staffing Co. and the platform admin are seeded only into a control database on this machine " +
-        "(localhost or 127.0.0.1); CONTROL_DATABASE_URL is not one.",
-    );
-  }
+export async function seedLocalTestData(options: LocalSeedOptions): Promise<LocalSeedResult> {
+  const refusal = localSeedRefusal(options);
+  if (refusal) throw new Error(refusal);
   const harborTenantId = await seedDemoCompany(options, "harbor");
   const control = openControlDb(options.controlUrl, { max: 1 });
   try {

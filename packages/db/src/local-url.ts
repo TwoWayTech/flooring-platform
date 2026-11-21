@@ -21,7 +21,9 @@ const UNSAFE_URL_CHARACTERS = /[\u0000- \u007f\\]/;
  * Whether a database URL could make postgres.js connect somewhere other than what WHATWG URL
  * reads: a scheme other than `postgres:` or `postgresql:`, a fragment, a query option other than `sslmode`, a control character, space or backslash
  * (which WHATWG drops or rewrites before parsing and postgres.js keeps), or a scheme not followed
- * at once by `//` (postgres.js takes the authority after the first `://` it finds). The guards
+ * at once by `//` (postgres.js takes the authority after the first `://` it finds), or more than
+ * one `@` in the authority (`u@evil.com@localhost`: both parsers take the last one today, but
+ * a reader can't tell which host is meant, and a parser that takes the first would leave). The guards
  * refuse such a URL rather than reason about it (security reviews, 2026-11-20).
  */
 export function redirectableUrl(url: string, parsed: URL): boolean {
@@ -30,8 +32,17 @@ export function redirectableUrl(url: string, parsed: URL): boolean {
     url.includes("#") ||
     UNSAFE_URL_CHARACTERS.test(url) ||
     !url.startsWith(`${parsed.protocol}//`) ||
-    [...parsed.searchParams.keys()].some((key) => !ALLOWED_URL_OPTIONS.has(key))
+    [...parsed.searchParams.keys()].some((key) => !ALLOWED_URL_OPTIONS.has(key)) ||
+    hasSeveralAts(url)
   );
+}
+
+/** Whether the authority (between `://` and the first `/` or `?`, as postgres.js reads it) holds more than one `@`. */
+function hasSeveralAts(url: string): boolean {
+  const rest = url.slice(url.indexOf("://") + 3);
+  const end = rest.search(/[/?]/);
+  const authority = end === -1 ? rest : rest.slice(0, end);
+  return authority.indexOf("@") !== authority.lastIndexOf("@");
 }
 
 /**

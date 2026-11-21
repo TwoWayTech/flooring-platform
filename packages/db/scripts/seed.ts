@@ -1,11 +1,12 @@
 import { createProviders } from "@workspace/providers";
-import { SEED_PLATFORM_ADMIN, seedLocalTestData, seedTestCompany, type SeedOptions } from "../src/seed";
+import { SEED_PLATFORM_ADMIN, seedLocalTestData, seedTestCompany, type LocalSeedOptions } from "../src/seed";
 import { scriptEnv } from "./env";
 
 /**
  * Seeds the test company (Summit Floor Co.) into the control database and its own company
  * database, then, for local testing only, the HR Suite company Harbor Staffing Co. and a platform
- * admin (ADR 0065). The second step refuses a control database that is not on this machine.
+ * admin (ADR 0065). The second step refuses, before it writes, a control database or provisioning
+ * server not on this machine, or a DB_PROVIDER other than postgres or noop.
  */
 async function main(): Promise<void> {
   const env = scriptEnv();
@@ -14,8 +15,9 @@ async function main(): Promise<void> {
     DB_PROVIDER: env.provider,
     TENANT_DB_ADMIN_URL: env.adminUrl,
   });
-  const options: SeedOptions = {
+  const options: LocalSeedOptions = {
     controlUrl: env.controlUrl,
+    adminUrl: env.adminUrl,
     encryptionKey: env.encryptionKey,
     provisioner: database,
     provider: env.provider,

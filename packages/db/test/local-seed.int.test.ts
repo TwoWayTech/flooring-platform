@@ -35,11 +35,13 @@ import {
   seededPlatformAdminId,
   seededTenantId,
   seedLocalTestData,
+  localSeedRefusal,
   seedTestCompany,
+  type LocalSeedOptions,
   type SeedOptions,
 } from "../src/seed";
 import { loadDemoCompany } from "../src/seed/fixtures";
-import { scratchDatabase } from "../src/testing";
+import { adminUrl as testAdminUrl, scratchDatabase } from "../src/testing";
 
 const encryptionKey = randomBytes(32).toString("base64");
 const userPassword = randomBytes(12).toString("base64url");
@@ -62,7 +64,8 @@ const EMPLOYEE_PERMISSIONS = [
 const SEED_TIMEOUT_MS = 600_000;
 
 // The local-only seed (ADR 0065): Summit as before, then Harbor Staffing Co. in its own database
-// and a platform admin of no company, each run twice to prove the seed is idempotent.
+// and a platform admin whose home company is Summit (as an Employee, since there is no admin host
+// yet), each run twice to prove the seed is idempotent.
 describe("local test seed: Harbor Staffing Co. and a platform admin", () => {
   const scratch: { url: string; drop: () => Promise<void> }[] = [];
 
@@ -74,7 +77,11 @@ describe("local test seed: Harbor Staffing Co. and a platform admin", () => {
     );
     const base = { controlUrl: scratch[0].url, encryptionKey, provider: "noop", userPassword };
     const summitOptions: SeedOptions = { ...base, provisioner: new NoopProvisioner(scratch[1].url) };
-    const harborOptions: SeedOptions = { ...base, provisioner: new NoopProvisioner(scratch[2].url) };
+    const harborOptions: LocalSeedOptions = {
+      ...base,
+      adminUrl: testAdminUrl,
+      provisioner: new NoopProvisioner(scratch[2].url),
+    };
     for (let run = 0; run < 2; run += 1) {
       await seedTestCompany(summitOptions);
       await seedLocalTestData(harborOptions);
@@ -216,24 +223,73 @@ describe("local test seed: Harbor Staffing Co. and a platform admin", () => {
   });
 });
 
-describe("local test seed refuses a database that is not on this machine", () => {
-  it.each([
-    "postgres://postgres:postgres@db.example.com:5432/control",
-    "postgres://postgres:postgres@10.0.0.5:5432/control",
-    "postgres://postgres:postgres@localhost:5432/control?host=db.example.com",
-    "postgres://postgres:postgres@localhost:5432/control#x",
-    "not a url",
-  ])("refuses %s before it connects", async (controlUrl) => {
-    // A provisioner that would fail loudly if the seed got as far as creating a database.
-    const provisioner = new NoopProvisioner("postgres://never@localhost/never");
-    await expect(
-      seedLocalTestData({ controlUrl, encryptionKey, provisioner, provider: "noop", userPassword }),
-    ).rejects.toThrow(/only into a control database on this machine/);
-    expect(provisioner.created).toHaveLength(0);
+/** A database URL on this machine, for the side of a refusal test that should pass. */
+const LOCAL_URL = "postgres://postgres:postgres@localhost:5432/control";
+
+/**
+ * URLs the local seed must refuse. testing.ts has no tests of its own for these, so every case is
+ * here: other hosts, a look-alike host, IPv6 loopback (only localhost and 127.0.0.1 count), a
+ * second `@` in the authority, and query options postgres.js reads over the URL's host.
+ */
+const NOT_LOCAL = [
+  "postgres://postgres:postgres@db.example.com:5432/control",
+  "postgres://postgres:postgres@10.0.0.5:5432/control",
+  "postgres://postgres:postgres@localhost.evil.com:5432/control",
+  "postgres://postgres:postgres@[::1]:5432/control",
+  "postgres://u@evil.com@localhost/control",
+  "postgres://postgres:postgres@localhost:5432/control?host=db.example.com",
+  "postgres://postgres:postgres@localhost:5432/control?hostaddr=10.0.0.5",
+  "postgres://postgres:postgres@localhost:5432/control#x",
+  "not a url",
+];
+
+/** Runs the local seed with the given URLs and provider and expects a refusal before any provisioning. */
+async function expectRefused(input: { controlUrl: string; adminUrl: string; provider: string }, words: RegExp) {
+  // A provisioner that records any database the seed got as far as asking for.
+  const provisioner = new NoopProvisioner("postgres://never@localhost/never");
+  await expect(seedLocalTestData({ ...input, encryptionKey, provisioner, userPassword })).rejects.toThrow(words);
+  expect(provisioner.created).toHaveLength(0);
+}
+
+describe("local test seed refuses anything not on this machine, before it connects", () => {
+  it.each(NOT_LOCAL)("refuses the control database %s", async (controlUrl) => {
+    await expectRefused(
+      { controlUrl, adminUrl: LOCAL_URL, provider: "noop" },
+      /only into databases on this machine \(localhost or 127\.0\.0\.1\); CONTROL_DATABASE_URL is not\./,
+    );
   });
 
-  it("accepts localhost and 127.0.0.1", () => {
-    expect(isLocalDatabaseUrl("postgres://postgres:postgres@localhost:5432/control")).toBe(true);
+  it.each(NOT_LOCAL)("refuses the provisioning server %s", async (adminUrl) => {
+    await expectRefused({ controlUrl: LOCAL_URL, adminUrl, provider: "postgres" }, /TENANT_DB_ADMIN_URL is not\./);
+  });
+
+  it("names both variables when neither is local", async () => {
+    await expectRefused(
+      { controlUrl: NOT_LOCAL[0], adminUrl: NOT_LOCAL[0], provider: "postgres" },
+      /CONTROL_DATABASE_URL and TENANT_DB_ADMIN_URL are not\./,
+    );
+  });
+
+  it.each(["neon", "supabase", ""])("refuses DB_PROVIDER %j", async (provider) => {
+    await expectRefused(
+      { controlUrl: LOCAL_URL, adminUrl: LOCAL_URL, provider },
+      /only with DB_PROVIDER postgres or noop/,
+    );
+  });
+
+  it("accepts localhost and 127.0.0.1 with postgres or noop", () => {
+    expect(isLocalDatabaseUrl(LOCAL_URL)).toBe(true);
     expect(isLocalDatabaseUrl("postgres://postgres:postgres@127.0.0.1:5432/control?sslmode=disable")).toBe(true);
+    for (const provider of ["postgres", "noop"]) {
+      expect(
+        localSeedRefusal({
+          controlUrl: LOCAL_URL,
+          adminUrl: LOCAL_URL,
+          provider,
+          encryptionKey,
+          provisioner: new NoopProvisioner(),
+        }),
+      ).toBeNull();
+    }
   });
 });
