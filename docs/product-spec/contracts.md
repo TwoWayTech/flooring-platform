@@ -147,10 +147,10 @@ stateDiagram-v2
 
 1. **Add a draft.** The form takes direction, kind, other company, title, scope, dates and job site. A project also takes retainage percent, tax treatment and lines. A master takes pricing and terms. Defaults: 5 percent retainage, `on_billing`, end date 180 days out, sales rep is the creator, branch is the creator's, warehouse is the first location.
 2. **Send for signature.** The lines lock and the other company gets an Outbox row.
-3. **Record signature.** A person holding `contracts.contract.approve` types the signer's name and role. `signContract` files `Signed <number>.pdf`, marked "Simulated signature for the demo. Not a legal signature." The contract becomes Active.
+3. **Record signature.** A person holding `contracts.contract.approve` types the signer's name and role. The dialog says "Recorded as a typed signature; a signing provider is not connected yet." The name starts as the customer's contact person or the supplier's active primary contact, and empty when there is none, never the company name. `signContract` files `Signed <number>.pdf`, marked "Simulated signature for the demo. Not a legal signature." The contract becomes Active.
 4. **New billing.** The user enters cumulative work to date and stored materials per line. A milestone line is one Complete checkbox that bills its full value. The billing is the change since the last one.
 5. **Release retainage.** The user enters an amount up to what is held. It goes on its own invoice or bill.
-6. **Change order.** The user adds rows against an existing line or a new line. It waits for approval. Approval changes line values at once and never changes issued invoices.
+6. **Change order.** The user adds rows against an existing line or a new line. It waits for approval. Approving asks first and states the new contract value (value now plus the change). Approval changes line values at once and never changes issued invoices.
 7. **Mark completed, then Close.** Or **Terminate** with a reason from Active or Completed.
 8. **Renew** (masters only on the screen). See Edge cases, item 1.
 
@@ -218,6 +218,15 @@ Money uses decimal.js. `roundMoney` rounds to 2 places, half up. `pctOf(value, p
 
     A release billing stores `gross 0.00`, `withheld 0.00`, `released = moneyString(amount)` and `periodEnd = today`.
 
+10a. **Which billings a release paid out.** `releaseAllocation` in `packages/shared/src/contracts/schedule.ts`, served by `GET /contract-schedule`. Derived, never stored. Per line, in billing-number order, each progress billing adds what it withheld to a queue; a billing that lowers a line takes back its newest withholding first; each release share is paid out of the oldest billing's retainage first.
+
+    ```
+    released(progress billing) = sum of release shares taken from its retainage
+    released(release)          = its amount; covers = the progress billings it took from, oldest first
+    ```
+
+    In Billings, a progress billing's Released column shows `released`, and a release reads "Release of retainage from billing 1 and 2".
+
 11. **Contract figures.** `contractFigures` in `billing.ts`. Only posted billings count.
 
     ```
@@ -231,6 +240,16 @@ Money uses decimal.js. `roundMoney` rounds to 2 places, half up. `pctOf(value, p
     ```
 
     On the page, Invoiced is `billed`, Retained is `held` and Remaining is `remaining`. Paid is computed in `ContractPage` from confirmed customer payments and confirmed supplier allocations on posted billings. Pending change orders never count as value.
+
+11a. **Schedule of values per line.** `scheduleLines` in `packages/shared/src/contracts/schedule.ts`, served by `GET /contract-schedule` (`contracts.billing.view`). Only posted billings count.
+
+    ```
+    billed(line)    = completedToDate + storedBalance on the line's latest posted progress billing
+    retained(line)  = held(line), rule 9
+    remaining(line) = scheduledValue - billed(line)
+    ```
+
+    The Schedule of values shows Line, Billing and Value, and for people with `contracts.billing.view` also Billed to date, Retained and Remaining to bill, with a totals row.
 
 12. **Customer invoice.** `contractInvoice` in `packages/shared/src/contracts/documents.ts`. One invoice covers the whole billing. Retainage is held off the total, so retained money is not in receivables until it is released.
 
@@ -255,7 +274,7 @@ Money uses decimal.js. `roundMoney` rounds to 2 places, half up. `pctOf(value, p
     on_release      -> moneyString(gross - withheld + released)
     ```
 
-    Under `on_billing` a release has gross 0, so it carries no tax. Under `on_release` the retained part is taxed under the rule of its release day, so a tax rule change between a billing and its release taxes the retained money at the new rate (ADR 0059, part 3a). `computeTotals` in `packages/shared/src/documents.ts` applies the rate per taxable line with `roundMoney(amount * rate / 100)` and sums, or rounds once on the taxable amount, by the company's `tax.rounding` setting. The rule comes from `taxContextFor` in `packages/shared/src/operations/quotes.ts`, using the job site, with `lumpSum` false. The customer is exempt only while its certificate is valid on the issue date.
+    Under `on_billing` a release has gross 0, so it carries no tax. Under `on_release` the retained part is taxed under the rule of its release day, so a tax rule change between a billing and its release taxes the retained money at the new rate (ADR 0059, part 3a). `computeTotals` in `packages/shared/src/documents.ts` applies the rate per taxable line with `roundMoney(amount * rate / 100)` and sums, or rounds once on the taxable amount, by the company's `tax.rounding` setting. The rule comes from `taxContextFor` in `packages/shared/src/operations/quotes.ts`, using the job site, with `lumpSum` false. The customer is exempt only while its certificate is valid on the issue date. The Billings panel says in one line how sales tax applies (`billingTaxNote` in `apps/web/src/features/contracts`): not charged because of a resale certificate or because the contractor pays it, or charged on billing or on release; subcontractor bills carry none. A contract invoice that charged no tax although a rule applies prints "Sales tax, not charged (contract billing)" (`taxLabel`). Wording only (ADR 0061, decision 10).
 
 14. **Supplier bill.** `contractBill` in `documents.ts`. It carries no tax.
 
@@ -549,7 +568,7 @@ The catalogue marks `contract.signature` and `milestone.invoiced` as carrying a 
 
 There is no contract report on the Reports page.
 
-- **Contracts list.** CSV of the filtered rows, from the shared table. Columns are Number, Title, Company, Type, Kind (hidden by default), Status, Value, Retained and End date.
+- **Contracts list.** CSV of the filtered rows, from the shared table. Columns are Number, Title, Company, Type, Kind (hidden by default), Status, Value, Customers hold (retainage a customer holds from us, customer contracts only), We hold (retainage we hold from a subcontractor, subcontracts only) and End date. The two are never added together, as on the dashboard (rule 24).
 - **Dashboard widget.** Rule 24.
 - **Business report** (`packages/shared/src/business-report.ts`). `figuresFor` takes revenue and cost from invoice lines, so a progress billing counts at gross on its issue date and a release counts as nothing. `balancesAt` uses ledger balances, so retained money is outside Customers owe until released. Subcontract bills count in You owe suppliers. They do not add to cost, which comes only from invoice lines and expenses.
 - **Other reports.** `packages/shared/src/analytics.ts` has no contract handling and treats a contract invoice like any other. Held retainage appears in no report.

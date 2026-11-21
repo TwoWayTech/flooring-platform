@@ -8,6 +8,7 @@ import {
   billLedger,
   closeProblem,
   contractFigures,
+  contractSchedule,
   daysBetween,
   draftProblem,
   MAX_PROOF_FILES,
@@ -21,6 +22,7 @@ import {
   type ContractDirection,
   type ContractKind,
   type ContractLine,
+  type ContractSchedule,
   type ContractTaxTreatment,
   type InsuranceCertificate,
   type LienWaiver,
@@ -150,6 +152,18 @@ export class ContractsService {
   async listCertificates(tenant: TenantContext, access: RequestAccess): Promise<InsuranceCertificate[]> {
     const db = await this.tenancy.db(tenant);
     return loadCertificates(db, await visibleContractIds(db, access));
+  }
+
+  /**
+   * The schedule of values and release allocation of the contracts in scope (contracts.md rules
+   * 10a and 11a): each line's billed, retained and remaining money, and which billings each
+   * release paid out, derived from the posted billings with decimal.js and never stored (ADR 0013).
+   */
+  async schedule(tenant: TenantContext, access: RequestAccess): Promise<ContractSchedule> {
+    const db = await this.tenancy.db(tenant);
+    const ids = await visibleContractIds(db, access);
+    const [lines, billings] = await Promise.all([loadContractLines(db, ids), loadBillings(db, this.control.db, ids)]);
+    return contractSchedule(lines, billings);
   }
 
   /**

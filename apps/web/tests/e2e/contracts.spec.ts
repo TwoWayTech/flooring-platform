@@ -50,6 +50,39 @@ test.describe("Contracts (spec D1, D2)", () => {
     await expect(page.getByText("Add at least one line to the schedule of values.")).toBeVisible();
   });
 
+  test("the schedule of values shows each line's billed, retained and remaining money", async ({ page }) => {
+    await open(page, "CTR-1001");
+    const schedule = page.getByRole("region", { name: "Schedule of values" });
+    await expect(schedule.getByRole("columnheader")).toHaveText([
+      "Line",
+      "Billing",
+      "Value",
+      "Billed to date",
+      "Retained",
+      "Remaining to bill",
+    ]);
+    await expect(schedule.getByRole("row", { name: /^L1 Materials/ }).getByRole("cell")).toHaveText([
+      "L1 Materials",
+      "By progress",
+      "$72,000.00",
+      "$42,000.00",
+      "$2,100.00",
+      "$30,000.00",
+    ]);
+    await expect(schedule.getByRole("row", { name: /^Total/ }).getByRole("cell")).toHaveText([
+      "$126,000.00",
+      "$66,000.00",
+      "$3,300.00",
+      "$60,000.00",
+    ]);
+  });
+
+  test("the list keeps retainage customers hold apart from retainage we hold", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/contracts");
+    await expect(page.getByRole("columnheader", { name: /Customers hold/ })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: /We hold/ })).toBeVisible();
+  });
+
   test("a billing holds retainage off the invoice, which still shows the gross", async ({ page }) => {
     await open(page, "CTR-1001");
     await page.getByRole("button", { name: "New billing" }).click();
@@ -76,6 +109,11 @@ test.describe("Contracts (spec D1, D2)", () => {
     await open(page, "CTR-1001");
     await expect(page.getByText(/Pending change orders/)).toBeVisible();
     await page.getByRole("button", { name: "Approve" }).click();
+    // A confirmation first, with the value the contract will have (click-through #34).
+    const confirm = page.getByRole("dialog", { name: "Approve CO-1" });
+    await expect(confirm).toContainText("New contract value");
+    await expect(confirm).toContainText("$141,000.00");
+    await confirm.getByRole("button", { name: "Approve" }).click();
     await expect(page.getByText("CO-1 approved")).toBeVisible();
     await expect(page.getByText(/Pending change orders/)).toHaveCount(0);
     await expect(page.getByRole("cell", { name: /CO-1\.1 Sound underlayment/ })).toBeVisible();
@@ -87,7 +125,14 @@ test.describe("Contracts (spec D1, D2)", () => {
     await page.getByRole("dialog").getByRole("button", { name: "Release retainage" }).click();
     await expect(page.getByText("Retainage released")).toBeVisible();
     await expect(page.getByRole("button", { name: "Release retainage" })).toHaveCount(0);
-    await expect(page.getByRole("row", { name: /Release/ }).getByRole("link")).toBeVisible();
+    await expect(page.getByRole("row", { name: /^Release of retainage from billing/ }).getByRole("link")).toBeVisible();
+    // Each billing's Released shows what of its retainage was paid out (click-through #33).
+    await expect(
+      page
+        .getByRole("row", { name: /^Billing 1,/ })
+        .getByRole("cell")
+        .nth(4),
+    ).not.toHaveText("$0.00");
   });
 
   test("a subcontract billing raises a supplier bill, and insurance shows as expiring", async ({ page }) => {
