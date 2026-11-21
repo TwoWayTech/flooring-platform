@@ -28,7 +28,7 @@ import {
   type ViewedDocLine,
   type ViewedInvoice,
 } from "../src";
-import { loadFixtures } from "./report-fixtures";
+import { businessDataOf, loadFixtures } from "./report-fixtures";
 import { invoicesAsSent, SALES } from "./viewed-records";
 
 const summit = loadFixtures("summit");
@@ -169,14 +169,7 @@ describe("storedPnl: the stored profit and loss never takes an unknown cost (ADR
   });
 
   it.each([true, false])("makes pnlReport refuse a browser's invoices, margin flag %s", (margin) => {
-    const data = {
-      today: ANCHOR,
-      invoices: invoicesAsSent(summit.invoices, SALES),
-      expenses: summit.expenses,
-      products: summit.products,
-      payments: summit.payments,
-      customers: summit.customers,
-    };
+    const data = { ...businessDataOf(summit), invoices: invoicesAsSent(summit.invoices, SALES) };
     expect(() => pnlReport({ range: "12m", locationId: null }, data, { margin, payroll: true })).toThrow(NO_PNL);
   });
 });
