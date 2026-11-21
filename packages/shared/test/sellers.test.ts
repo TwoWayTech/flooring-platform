@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   bestSellers,
-  boxedStock,
   customerCredit,
   customerStatement,
   dec,
@@ -35,14 +34,7 @@ describe("best sellers and slow movers", () => {
   });
 
   it("lists stocked products that sell least recently, without services", () => {
-    const slow = slowMovers(
-      summit.products,
-      summit.rolls,
-      summit.invoices,
-      today,
-      5,
-      boxedStock(summit.stockMovements),
-    );
+    const slow = slowMovers(summit.products, summit.rolls, summit.invoices, today, 5, summit.stockMovements);
     expect(slow).toHaveLength(5);
     expect(slow.every((s) => dec(s.onHand).gt(0))).toBe(true);
     expect(slow.map((s) => s.daysWithoutSale)).toEqual([...slow.map((s) => s.daysWithoutSale)].sort((a, b) => b - a));

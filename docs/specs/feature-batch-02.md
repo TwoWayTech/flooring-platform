@@ -143,7 +143,7 @@ Invoices table: add **Paid**, **Remaining**, **Last payment** and **Warehouse** 
 ### E1. Dashboard redesign
 - Key figures in one consistent row of cards that never wrap awkwardly at any width (auto-fit grid with a minimum card width). Each card: label, value with compact formatting and tabular numerals, change vs the previous period, small sparkline.
 - **One period selector** for the dashboard (This month, Last 30 days, This quarter, Year to date, Custom) and a **warehouse filter**, placed above or beside the widgets.
-- Widgets: Revenue and gross margin (chart / table toggle); **Pending quotes**; Receivables (current vs overdue); **Payments to verify**; **Best sellers** with its own period filter (7 days, 30 days, 90 days, 12 months, custom), a metric toggle (revenue, quantity, margin), a category filter and a chart / table toggle; Slow movers; Today's jobs; Top performer (E2).
+- Widgets: Revenue and gross margin (chart / table toggle); **Pending quotes**; Receivables (current vs overdue); **Payments to verify**; **Best sellers** with its own period filter (7 days, 30 days, 90 days, 12 months, custom), a metric toggle (revenue, quantity, margin), a category filter and a chart / table toggle; Slow movers (days since the last sale; a product that never sold counts its days in stock from its newest stock receipt, and from when it was added only if it was never received; owner, 2026-11-21, click-through #4); Today's jobs; Top performer (E2).
 
 ### E2. Sales performance and commissions
 - Settings → Commissions: a rule per role or per person: percentage of **paid revenue** or of **gross margin**, earned when payments are confirmed, optional tiers.

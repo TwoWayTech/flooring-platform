@@ -85,8 +85,8 @@ async function reopenWeek(request: APIRequestContext, week: string): Promise<Tim
 
 /**
  * Brings Bri's `week` back to where she can upload (`reopenWeek`), picks this run's hours against
- * the first `filled` days, and lists Bri's other submitted weeks (the seeded 2026-10-26 one), which
- * approving this week must leave waiting.
+ * the first `filled` days, and lists Bri's other submitted weeks (the seeded one, the week before the
+ * seed day's), which approving this week must leave waiting.
  */
 async function sweep(request: APIRequestContext, week: string, filled: number): Promise<Swept> {
   const sheets = await reopenWeek(request, week);

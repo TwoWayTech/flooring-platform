@@ -64,6 +64,15 @@ export function can(access: Access, key: PermissionKey): boolean {
   return access.permissions.has(key);
 }
 
+/**
+ * Whether a set of effective permissions holds any one of `keys`: the rule an API route's
+ * `@RequirePermission(...)` applies (spec rule 5, any one of them), so the screens can skip a read
+ * the API would refuse with the same answer the guard gives.
+ */
+export function holdsAny(held: ReadonlySet<PermissionKey>, keys: readonly PermissionKey[]): boolean {
+  return keys.some((key) => held.has(key));
+}
+
 /** Why a grant was refused, or null when it is allowed. */
 export type GrantDenial = "not_held" | "owner_only" | "scope_wider" | null;
 

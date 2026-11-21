@@ -7,6 +7,7 @@ import {
   type ExecutionContext,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
+import { holdsAny } from "@workspace/shared";
 import { accessLevel } from "../tenancy/access";
 import type { TenantRequest } from "../tenancy/tenant-context";
 import type { AuthSession } from "../auth/session.service";
@@ -33,7 +34,7 @@ export function permissionDecision(
 ): keyof typeof PERMISSION_REFUSALS | null {
   if (requirement.permissions.length === 0 && !requirement.anyMember) return "permission_undeclared";
   if (requirement.module && !access.modules.includes(requirement.module)) return "module_not_enabled";
-  if (requirement.permissions.length > 0 && !requirement.permissions.some((key) => access.permissions.has(key))) {
+  if (requirement.permissions.length > 0 && !holdsAny(access.permissions, requirement.permissions)) {
     return "forbidden";
   }
   if (access.disabled) return "forbidden";

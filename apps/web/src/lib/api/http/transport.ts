@@ -1,5 +1,7 @@
 import { AUTH_BASE_PATH } from "@/lib/session/auth-cookie";
 import { ApiError } from "../errors";
+import type { ReadGate } from "./read-gate";
+import { ReadShare } from "./read-share";
 
 /** The error body every apps/api endpoint returns (docs/api-contract.md, Conventions). */
 interface ErrorBody {
@@ -55,7 +57,29 @@ export class HttpTransport {
     private readonly fetcher: typeof fetch = (...args) => fetch(...args),
     private readonly reread: () => void = () => undefined,
     private readonly authBaseUrl: string = AUTH_BASE_PATH,
+    /** In-flight reads, the read gate and the session generation, shared by every copy of this transport. */
+    private readonly share: ReadShare = new ReadShare(),
   ) {}
+
+  /** Which list reads the person may make (`ReadGate`). */
+  get gate(): ReadGate {
+    return this.share.gate;
+  }
+
+  /** The session generation now; a `GET /company` answer is learned only if it is still current. */
+  get generation(): number {
+    return this.share.generation;
+  }
+
+  /** Whether nothing changed the session or company since `generation` was read. */
+  isCurrent(generation: number): boolean {
+    return this.share.isCurrent(generation);
+  }
+
+  /** The company or session changed: forget in-flight reads and the person's access (`ReadShare.forget`). */
+  forgetReads(): void {
+    this.share.forget();
+  }
 
   /**
    * Sends a JSON request and returns the parsed body; 204 returns undefined. A GET never re-reads.
@@ -63,16 +87,41 @@ export class HttpTransport {
    * fails to parse has still committed), or once it refused it with a status in ANSWERED_REFUSALS.
    */
   async request<T>(method: Verb, path: string, body?: unknown): Promise<T> {
+    if (method === "GET" && body === undefined) return this.shared<T>(path);
     if (method === "GET") return this.parse<T>(await this.exchange(method, path, jsonInit(body)));
     let response: Response;
     try {
       response = await this.exchange(method, path, jsonInit(body));
     } catch (failure) {
-      if (failure instanceof HttpApiError && ANSWERED_REFUSALS.has(failure.status)) this.reread();
+      if (failure instanceof HttpApiError && ANSWERED_REFUSALS.has(failure.status)) this.answered();
       throw failure;
     }
-    this.reread();
+    this.answered();
     return this.parse<T>(response);
+  }
+
+  /**
+   * A GET that joins an identical one still in flight instead of sending it again (click-through
+   * finding #29): panels of one page that load the same list (locations, customers, GET /company)
+   * share one request. Each caller parses its own copy of the body, so no screen sees another's
+   * changes. Only requests still waiting are shared, within one session generation: a write the
+   * server answered, and a company or session change, forget them (`ReadShare`), so a read made
+   * after either never gets an answer from before it.
+   */
+  private async shared<T>(path: string): Promise<T> {
+    // Keyed by the whole URL: the auth copy of this transport shares the map on another base.
+    const text = await this.share.join(`${this.baseUrl}${path}`, () =>
+      this.exchange("GET", path, jsonInit(undefined)).then((response) =>
+        response.status === 204 ? null : response.text(),
+      ),
+    );
+    return (text === null ? undefined : JSON.parse(text)) as T;
+  }
+
+  /** A write was answered: later reads start afresh, then the screens read again. */
+  private answered(): void {
+    this.share.dropInFlight();
+    this.reread();
   }
 
   /**
@@ -85,7 +134,7 @@ export class HttpTransport {
 
   /** This transport, with `changed` called after every write the server answered (the router's re-read). */
   withRereads(changed: () => void): HttpTransport {
-    return new HttpTransport(this.baseUrl, this.fetcher, changed, this.authBaseUrl);
+    return new HttpTransport(this.baseUrl, this.fetcher, changed, this.authBaseUrl, this.share);
   }
 
   /**
@@ -94,7 +143,7 @@ export class HttpTransport {
    * Same fetcher and re-reads (ADR 0060).
    */
   auth(): HttpTransport {
-    return new HttpTransport(this.authBaseUrl, this.fetcher, this.reread, this.authBaseUrl);
+    return new HttpTransport(this.authBaseUrl, this.fetcher, this.reread, this.authBaseUrl, this.share);
   }
 
   /** Fetches a stored file's bytes, such as a payment's proof; failures are ApiErrors like any request. */

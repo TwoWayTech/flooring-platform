@@ -1,6 +1,7 @@
 import { API_LOCALIZATION_TABS, API_SETTINGS_SECTIONS } from "@workspace/shared";
 import type { ApiClient, CollectionName } from "@/lib/api/contract";
 import { API_METHODS } from "@/lib/api/http/api-methods";
+import { ReadGate } from "@/lib/api/http/read-gate";
 import type { HttpTransport } from "@/lib/api/http/transport";
 import { insideParens, normalPath, readRepoFile, withoutComments } from "./source";
 
@@ -41,11 +42,11 @@ export const RESOLVED_ELSEWHERE: Readonly<Record<string, { routes: string[]; bet
   },
   openCompany: {
     routes: [],
-    why: "Sends nothing: forgets the last company's zone, then opens the company on the client (demo.openCompany).",
+    why: "Sends nothing: forgets the last company's zone and access (ReadGate), then opens the company on the client (demo.openCompany).",
   },
   closeCompany: {
     routes: [],
-    why: "Sends nothing: forgets the company's zone and closes the client's company view (demo.closeCompany).",
+    why: "Sends nothing: forgets the company's zone and access (ReadGate) and closes the client's company view (demo.closeCompany).",
   },
   getSettings: {
     routes: ["GET /settings"],
@@ -200,8 +201,20 @@ function requestsIn(text: string): { routes: MethodRoute[]; literal: boolean } {
     const softens = (match[1] as MethodRoute["softens"] | undefined) ?? null;
     routes.push({ route: `${verb} ${normalPath(path)}`, softens });
   }
+  // A gated list read (`readList` softens as `seen`, `readListOrOff` as `seenOrOff`; finding #28).
+  const gated = /\b(readList|readListOrOff)\s*(?:<[\s\S]*?>)?\s*\(\s*http\s*,\s*"(\/[^"]*)"/g;
+  for (const match of text.matchAll(gated)) {
+    const softens = match[1] === "readListOrOff" ? "seenOrOff" : "seen";
+    routes.push({ route: `GET ${normalPath(match[2] ?? "")}`, softens });
+  }
   return { routes, literal: literal && routes.length > 0 };
 }
+
+/** How a list read's wrapper softens a refusal: the gated helpers as the wrappers they call. */
+const GATED_SOFTENS: Readonly<Record<string, MethodRoute["softens"]>> = {
+  readList: "seen",
+  readListOrOff: "seenOrOff",
+};
 
 /**
  * The routes each API_METHODS key reaches, by key; `list` and `get` are left out (see
@@ -229,6 +242,8 @@ export function methodRoutes(): { routes: Map<string, MethodRoute[]>; unresolved
 /** How `list` or `get` softens a refusal from the API (both read through `seen`), from their text. */
 export function probedSoftens(method: string): MethodRoute["softens"] {
   const text = methodTexts().get(method) ?? "";
+  const gated = /\b(readList|readListOrOff)\s*(?:<[\s\S]*?>)?\s*\(\s*http\s*,/.exec(text)?.[1];
+  if (gated) return GATED_SOFTENS[gated] ?? null;
   const wrapper = /\b(seen|seenOrOff|orNone)\(\s*http\s*\.\s*request/.exec(text)?.[1];
   return (wrapper as MethodRoute["softens"] | undefined) ?? null;
 }
@@ -258,6 +273,8 @@ async function probe(
 ): Promise<string | undefined> {
   const sent: string[] = [];
   const http = {
+    // Access not yet known: every list read goes out, so the probe sees each route.
+    gate: new ReadGate(),
     request: async (verb: string, path: string) => {
       sent.push(`${verb} ${normalPath(path)}`);
       return [];

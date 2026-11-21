@@ -20,7 +20,7 @@ import {
   tenants,
   user,
 } from "@workspace/db/control";
-import { seededTenantId, seedTestCompany } from "@workspace/db/seed";
+import { loadDemoCompany, seededTenantId, seedTestCompany } from "@workspace/db/seed";
 import { adminUrl, scratchDatabase } from "@workspace/db/testing";
 import {
   companyDatabaseName,
@@ -76,6 +76,8 @@ export class AuthHarness {
       provisioner: new NoopProvisioner(this.scratch[1].url),
       provider: "noop",
       userPassword: PASSWORD,
+      // The API tests check fixture dates as generated, so the seed keeps them (no shift to today).
+      seedDay: loadDemoCompany("summit").fixtures.anchorDate,
     });
     Object.assign(process.env, {
       CONTROL_DATABASE_URL: this.scratch[0].url,

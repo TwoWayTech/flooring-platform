@@ -5,7 +5,6 @@ import {
   monthlyPnl,
   pnlTotals,
   slowMovers,
-  boxedStock,
   type Crew,
   type Customer,
   type Expense,
@@ -101,10 +100,7 @@ export function useDashboardData() {
       return {
         months,
         totals: pnlTotals(months),
-        slow: withProduct(
-          slowMovers(products, rolls, sales.invoices, today, LIST_LENGTH, boxedStock(stockMovements)),
-          products,
-        ),
+        slow: withProduct(slowMovers(products, rolls, sales.invoices, today, LIST_LENGTH, stockMovements), products),
         jobsToday: jobs
           .filter((j) => j.date === today)
           .sort((a, b) => a.startHour - b.startHour)
