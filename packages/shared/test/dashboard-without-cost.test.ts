@@ -313,8 +313,9 @@ describe("bestSellersIn over invoices as received (spec E1 Best sellers)", () =>
     const range = { from: "2026-10-01", to: "2026-10-01", limit: 5 };
     const byRevenue = bestSellersIn([invoice], [], { ...range, metric: "revenue" });
     expect(byRevenue).toEqual([
-      { productId: "p-a", revenue: "500.00", quantity: "100", margin: null },
-      { productId: "p-b", revenue: "400.00", quantity: "100", margin: null },
+      // No catalog here, so each row is named from its line's description.
+      { productId: "p-a", name: "p-a", revenue: "500.00", quantity: "100", margin: null },
+      { productId: "p-b", name: "p-b", revenue: "400.00", quantity: "100", margin: null },
     ]);
     expect(bestSellersIn([invoice], [], { ...range, metric: "margin" })).toEqual(byRevenue);
   });
