@@ -37,3 +37,4 @@ One line per change that lands on `main`, appended by `.github/workflows/merge-l
 | 2026-11-14 | #31 | docs: handoff after PRs #28 to #30, queue paused | @TwoWayTech | fix/docs-handoff-2026-11-14 | `bd9155d` |
 | 2026-11-20 | #76 | docs: hand off A's run of 2026-11-20 (#45 to #69 and #43, then fix PRs #70 to #75) | @TwoWayTech | fix/docs-handoff-2026-11-20 | `ef2cb56` |
 | 2026-11-21 | #77 | docs: click-through of the real product in api mode, 2026-11-21 | @TwoWayTech | feat/docs-click-through-2026-11-21 | `a320b6e` |
+| 2026-11-21 | #78 | docs: the owner's decisions after the click-through of 2026-11-21 (ADR 0061) | @TwoWayTech | feat/docs-owner-decisions-2026-11-21 | `943dfee` |
