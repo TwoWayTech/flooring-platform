@@ -32,7 +32,15 @@ test.describe("inventory linked to invoices (spec C1, C2, C3)", () => {
     await sheet.getByLabel("Reference or transaction ID").fill("ACH-STOCK-1");
     await sheet.locator("input[type=file]").setInputFiles(PDF);
     await sheet.getByRole("button", { name: "Save payment" }).click();
+    // A cut can't be undone, so it asks first, naming the length and the roll (click-through #17).
     await stock.getByRole("button", { name: "Cut", exact: true }).click();
+    const confirm = page.getByRole("dialog", { name: /^Cut 85\.00 ft from roll / });
+    await expect(confirm).toContainText("can't be undone");
+    await confirm.getByRole("button", { name: "Cancel" }).click();
+    await expect(stock.getByText("Reserved", { exact: true })).toBeVisible();
+    await stock.getByRole("button", { name: "Cut", exact: true }).click();
+    await confirm.getByRole("button", { name: "Cut 85.00 ft" }).click();
+    await expect(page.getByText(/^Cut 85\.00 ft from roll .+ for INV-\d+$/)).toBeVisible();
     await expect(stock.getByText("Cut", { exact: true })).toBeVisible();
 
     await page.goto("/inventory/rolls/sm-roll-0004");
@@ -69,7 +77,14 @@ test.describe("inventory linked to invoices (spec C1, C2, C3)", () => {
     await expect(row).toBeVisible();
     const number = (await row.getByRole("cell").first().innerText()).trim();
     await row.getByRole("button", { name: /^(Cut|Issue)$/ }).click();
-    await expect(page.getByText(new RegExp(`(Cut|Issued) for ${number}`))).toBeVisible();
+    // It asks first, as on the invoice (click-through #17); Cancel leaves the row.
+    const confirm = page.getByRole("dialog", { name: /^(Cut .+ ft from roll .+|Issue .+)\?$/ });
+    await expect(confirm).toContainText("can't be undone");
+    await confirm.getByRole("button", { name: "Cancel" }).click();
+    await expect(row).toBeVisible();
+    await row.getByRole("button", { name: /^(Cut|Issue)$/ }).click();
+    await confirm.getByRole("button", { name: /^(Cut|Issue) / }).click();
+    await expect(page.getByText(new RegExp(`^(Cut|Issued) .+ for ${number}$`))).toBeVisible();
     await expect(page.getByRole("row", { name: new RegExp(number) })).toHaveCount(0);
   });
 

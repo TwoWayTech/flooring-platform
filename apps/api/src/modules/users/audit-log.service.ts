@@ -51,7 +51,8 @@ export class AuditLogService {
   /**
    * The newest entries of the company's audit log. Before and after values are stripped of
    * sensitive fields the viewer may not see before they become text, because the response
-   * interceptor cannot look inside a string (CLAUDE.md rule 5; PR #11 security review). Pay-sensitive
+   * interceptor cannot look inside a string (CLAUDE.md rule 5; PR #11 security review), and a sales
+   * document's cost fields need margin sight there too, as on the documents' own routes (#68). Pay-sensitive
    * entries are then redacted, each by whom it is about (`redactPayAudit`). Each entry whose details
    * are shown carries the names of the records its ids stand for (`auditNames`; click-through #58).
    */
@@ -80,8 +81,8 @@ export class AuditLogService {
         ? []
         : await this.control.db.select({ id: user.id, name: user.name }).from(user).where(inArray(user.id, actorIds));
     const shown = rows.map((row) => {
-      const before = stripSensitive(row.before, held);
-      const after = stripSensitive(row.after, held);
+      const before = stripSensitive(row.before, held, undefined, true);
+      const after = stripSensitive(row.after, held, undefined, true);
       const visible = payAuditDetailsVisible(viewer, subjects.get(row.id) ?? COMPANY_SUBJECT);
       const entry = redactPayAudit(
         {
@@ -101,7 +102,12 @@ export class AuditLogService {
       const ids = visible || !isPaySensitiveAudit(row.action) ? uuidsIn([before, after]) : new Set<string>();
       return { entry, ids };
     });
-    const recordNames = await auditNames(db, this.control.db, new Set(shown.flatMap(({ ids }) => [...ids])));
+    const recordNames = await auditNames(
+      db,
+      this.control.db,
+      tenant.companyId,
+      new Set(shown.flatMap(({ ids }) => [...ids])),
+    );
     return shown.map(({ entry, ids }) => {
       const named = [...ids].flatMap((id) => (recordNames.has(id) ? [[id, recordNames.get(id)!] as const] : []));
       return named.length ? { ...entry, names: Object.fromEntries(named) } : entry;

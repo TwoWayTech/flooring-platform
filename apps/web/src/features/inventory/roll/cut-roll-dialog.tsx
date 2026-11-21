@@ -7,6 +7,7 @@ import {
   ADJUSTMENT_REASON_LABELS,
   dec,
   featureOn,
+  formatNumber,
   REMNANT_THRESHOLD_FT,
   rollAvailable,
   validateCut,
@@ -27,6 +28,7 @@ import {
 import { Input } from "@workspace/ui/components/input";
 import { Label } from "@workspace/ui/components/label";
 import { Num } from "@workspace/ui/components/num";
+import { useNumberSettings } from "@workspace/ui/components/number-settings";
 import { RadioGroup, RadioGroupItem } from "@workspace/ui/components/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
 import { Segmented } from "@workspace/ui/components/segmented";
@@ -78,6 +80,7 @@ interface CutRollDialogProps {
 export function CutRollDialog({ roll, reservations, holds, customers, open, onOpenChange }: CutRollDialogProps) {
   const can = useCan();
   const router = useRouter();
+  const numbers = useNumberSettings();
   const [mode, setMode] = useState<Mode>("invoice");
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<string>("");
@@ -119,7 +122,7 @@ export function CutRollDialog({ roll, reservations, holds, customers, open, onOp
     if (mode === "invoice" && chosen) {
       void run(async () => {
         await api.issueReservation(chosen.reservationId, paid ? undefined : override);
-        return `Cut ${chosen.quantity} ft for ${chosen.invoiceNumber}`;
+        return `Cut ${formatNumber(chosen.quantity, "quantity", numbers)} ft for ${chosen.invoiceNumber}`;
       });
     } else if (mode === "new") {
       void run(async () => {

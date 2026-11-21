@@ -121,6 +121,12 @@ export interface Invoice {
   dueAt: string | null;
   /** Who made the invoice (a user id), for the lifecycle timeline (spec B2). */
   createdBy: string;
+  /**
+   * When it was made, to the minute (`2026-11-21T14:03`, the same form as a payment's
+   * `recordedAt`), so a statement orders the lines of one day by time (click-through #19). Older
+   * demo records have none.
+   */
+  createdAt?: string;
   /** When and by whom it was marked as sent to the customer; null until then. */
   sentAt: string | null;
   sentBy: string | null;

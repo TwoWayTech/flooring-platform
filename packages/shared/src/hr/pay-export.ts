@@ -1,11 +1,14 @@
-import type { Employee, PayPeriod, PayPeriodLine } from "../types";
+import type { Employee, PayPeriod, ViewedPayLine } from "../types";
 
 /** The label every gross-pay figure carries (spec C1, assumption C-1). */
 export const GROSS_PAY_LABEL = "Gross pay estimate. Taxes and net pay are calculated by your payroll provider.";
 
-/** A pay line with its person, as the exports read it. */
+/**
+ * A pay line with its person, as the exports read it. The line may lack its rates and salary when
+ * the viewer can't see them (CLAUDE.md rule 5): those cells are then left empty.
+ */
 export interface PayExportRow {
-  line: PayPeriodLine;
+  line: ViewedPayLine;
   employee: Employee;
 }
 
@@ -52,8 +55,8 @@ export function paySummaryTable(period: PayPeriod, rows: readonly PayExportRow[]
       line.doubleTimeHours,
       line.paidLeaveHours,
       line.unpaidLeaveHours,
-      line.baseRate,
-      line.salaryAmount,
+      line.baseRate ?? "",
+      line.salaryAmount ?? "",
       line.salaryDeduction,
       line.straightTimePay,
       line.overtimePremium,
@@ -91,7 +94,7 @@ export function payWorkweekTable(rows: readonly PayExportRow[]): string[][] {
         w.overtimeHours,
         w.doubleTimeHours,
         w.allocatedEarnings,
-        w.regularRate,
+        w.regularRate ?? "",
         w.overtimePremium,
         w.straddlesPeriod ? "yes" : "no",
       ]),
