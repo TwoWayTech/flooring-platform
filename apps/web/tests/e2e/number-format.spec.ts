@@ -29,6 +29,9 @@ test.describe("settings: number format", () => {
     await expect(page.getByRole("tooltip")).toContainText("$5,037.12");
 
     await page.goto("/sales/invoices/sm-inv-0150");
-    await expect(page.getByRole("article").getByText("Balance due").locator("..")).toContainText("$0");
+    // The invoice is a customer document: full cents whatever the display setting (click-through #55).
+    const article = page.getByRole("article");
+    await expect(article.getByText("Balance due").locator("..")).toContainText("$0.00");
+    await expect(article.getByText("Total", { exact: true }).locator("..")).toContainText("$5,037.12");
   });
 });

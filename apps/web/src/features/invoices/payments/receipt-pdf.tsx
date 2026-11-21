@@ -1,7 +1,7 @@
 import { Document, Page, Text, View } from "@react-pdf/renderer";
 import { formatWhen } from "@/lib/moments";
 import {
-  formatNumber,
+  formatDocumentNumber,
   PAYMENT_METHOD_LABELS,
   type CompanySettings,
   type Customer,
@@ -9,6 +9,7 @@ import {
   type InvoiceLedger,
   type Payment,
 } from "@workspace/shared";
+import { pdfSafe } from "@/lib/pdf-text";
 import { LINE, Monogram, styles } from "../pdf-parts";
 
 /** A payment receipt with every value formatted, as the PDF prints it (spec Appendix A "Download receipt"). */
@@ -33,7 +34,8 @@ export function buildReceiptModel(
   customer: Customer,
   settings: CompanySettings,
 ): ReceiptModel {
-  const money = (v: string) => formatNumber(v, "money", settings.numbers);
+  // A receipt is a customer document: full cents whatever the display setting (click-through #55).
+  const money = (v: string) => formatDocumentNumber(v, "money", settings.numbers);
   const { profile, branding } = settings;
   const method =
     PAYMENT_METHOD_LABELS[payment.method] +
@@ -78,7 +80,8 @@ function Line({ label, value, strong }: { label: string; value: string; strong?:
 }
 
 /** A payment receipt PDF, styled like the invoice PDF (same header, type and colors). */
-export function ReceiptPdf({ model }: { model: ReceiptModel }) {
+export function ReceiptPdf({ model: shown }: { model: ReceiptModel }) {
+  const model = pdfSafe(shown);
   return (
     <Document title={`Receipt ${model.number}`} author={model.company.name}>
       <Page size="LETTER" style={styles.page}>

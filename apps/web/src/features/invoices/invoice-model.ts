@@ -3,10 +3,10 @@ import {
   acceptedTotalIfDifferent,
   cartonEquivalent,
   dec,
-  formatNumber,
+  formatDocumentNumber,
+  invoiceTermsText,
   PAYMENT_METHOD_LABELS,
   lineAmount,
-  PAYMENT_TERM_LABELS,
   quantityKind,
   stateName,
   UNIT_LABELS,
@@ -15,17 +15,20 @@ import {
   type DocLine,
   type Customer,
   type DecimalInput,
+  type DocumentNumberKind,
   type Invoice,
   type InvoiceLedger,
-  type NumberKind,
   type Payment,
   type Quote,
   defaultAddress,
   plainAddress,
 } from "@workspace/shared";
 
-/** "≈ 22 cartons", or null for a line not sold in cartons (spec A1). */
-function cartonNote(line: DocLine, fmt: (value: DecimalInput, kind: NumberKind) => string): string | null {
+/** Formats one number for the document (`formatDocumentNumber`). */
+type DocFormat = (value: DecimalInput, kind: DocumentNumberKind) => string;
+
+/** "≈ 22 cartons", or null for a line not sold in cartons (spec A1). The PDF prints "about" (`pdfText`). */
+function cartonNote(line: DocLine, fmt: DocFormat): string | null {
   if (!line.sqFtPerCarton) return null;
   const { cartons } = cartonEquivalent(line.quantity, line.sqFtPerCarton);
   return `≈ ${fmt(cartons, "count")} ${cartons === 1 ? "carton" : "cartons"}`;
@@ -47,8 +50,9 @@ export interface ModelLine {
 
 /**
  * An invoice exactly as it is shown and printed. The screen and the PDF both render this, so
- * the PDF matches the screen (spec "Quote builder → invoice"). Numbers use the company's
- * display settings; totals were fixed by the decimal calculator when the invoice was made.
+ * the PDF matches the screen (spec "Quote builder → invoice"). Numbers print at full precision
+ * whatever the display setting (`formatDocumentNumber`, click-through #55), so the lines and totals
+ * add up; totals were fixed by the decimal calculator when the invoice was made.
  */
 export interface InvoiceModel {
   number: string;
@@ -89,7 +93,7 @@ function addressLines(a: Address): string[] {
 }
 
 /** How tax was charged, as the invoice states it. */
-function taxLabel(invoice: Invoice, fmt: (v: DecimalInput, k: NumberKind) => string): string {
+function taxLabel(invoice: Invoice, fmt: DocFormat): string {
   if (invoice.taxExempt) return "Sales tax, exempt (resale certificate on file)";
   if (!invoice.taxRule) return `Sales tax, not collected in ${stateName(invoice.jobSite.state)}`;
   return `Sales tax, ${invoice.taxRule.jurisdiction} ${fmt(invoice.taxRule.ratePct, "taxRate")}`;
@@ -99,7 +103,7 @@ function taxLabel(invoice: Invoice, fmt: (v: DecimalInput, k: NumberKind) => str
 function taxNote(
   invoice: Invoice,
   quote: Quote | undefined,
-  fmt: (v: DecimalInput, k: NumberKind) => string,
+  fmt: DocFormat,
   date: (iso: string) => string,
 ): string | null {
   const accepted = acceptedTotalIfDifferent(invoice, quote);
@@ -120,7 +124,7 @@ export function buildInvoiceModel(
   payments: readonly Payment[],
   settings: CompanySettings,
 ): InvoiceModel {
-  const fmt = (v: DecimalInput, kind: NumberKind) => formatNumber(v, kind, settings.numbers);
+  const fmt: DocFormat = (v, kind) => formatDocumentNumber(v, kind, settings.numbers);
   const { dateFormat: pattern, timeZone: zone } = settings.localization.region;
   // A moment is printed as the company's day; a calendar date as it is (ADR 0064).
   const date = (iso: string) => formatWhen(iso, { pattern, zone });
@@ -130,7 +134,7 @@ export function buildInvoiceModel(
     quoteNumber: quote?.number ?? null,
     issued: date(invoice.issuedAt),
     due: invoice.dueAt ? date(invoice.dueAt) : HELD_LABEL,
-    terms: PAYMENT_TERM_LABELS[customer.terms],
+    terms: invoiceTermsText(invoice, customer.terms),
     company: {
       name: branding.displayName,
       lines: [profile.legalName, ...addressLines(profile.address), profile.phone, profile.email],
@@ -150,7 +154,7 @@ export function buildInvoiceModel(
       description: line.description,
       quantity: `${fmt(line.quantity, quantityKind(line.unit))} ${UNIT_LABELS[line.unit]}`,
       cartons: cartonNote(line, fmt),
-      price: fmt(line.unitPrice, "money"),
+      price: fmt(line.unitPrice, "unitPrice"),
       amount: fmt(lineAmount(line), "money"),
     })),
     subtotal: fmt(invoice.subtotal, "money"),

@@ -1,7 +1,7 @@
 import { Document, Page, Text, View } from "@react-pdf/renderer";
 import {
   cartonEquivalent,
-  formatNumber,
+  formatDocumentNumber,
   locationName,
   UNIT_LABELS,
   type CompanySettings,
@@ -11,6 +11,7 @@ import {
   poLineAmount,
 } from "@workspace/shared";
 import { LINE, Monogram, styles } from "@/features/invoices/pdf-parts";
+import { pdfSafe } from "@/lib/pdf-text";
 
 /** A purchase order with every value formatted, as the PDF prints it (spec B2). */
 export interface PoModel {
@@ -33,8 +34,10 @@ export function buildPoModel(
   locations: readonly Location[],
   settings: CompanySettings,
 ): PoModel {
-  const money = (v: string) => formatNumber(v, "money", settings.numbers);
-  const qty = (v: string) => formatNumber(v, "quantity", settings.numbers);
+  // A purchase order leaves the company: full precision whatever the display setting (click-through #55).
+  const money = (v: string) => formatDocumentNumber(v, "money", settings.numbers);
+  const unitCost = (v: string) => formatDocumentNumber(v, "unitPrice", settings.numbers);
+  const qty = (v: string) => formatDocumentNumber(v, "quantity", settings.numbers);
   const { profile, branding } = settings;
   return {
     number: po.number,
@@ -59,7 +62,7 @@ export function buildPoModel(
       quantity: `${qty(l.quantity)} ${UNIT_LABELS[l.unit]}${
         l.sqFtPerCarton ? ` (${cartonEquivalent(l.quantity, l.sqFtPerCarton).cartons} cartons)` : ""
       }`,
-      cost: money(l.unitCost),
+      cost: unitCost(l.unitCost),
       amount: money(poLineAmount(l)),
       into: locationName([...locations], l.locationId ?? po.locationId),
     })),
@@ -69,7 +72,8 @@ export function buildPoModel(
 }
 
 /** The purchase order PDF sent to the supplier's sales rep, styled like the invoice (spec B2). */
-export function PoPdf({ model }: { model: PoModel }) {
+export function PoPdf({ model: shown }: { model: PoModel }) {
+  const model = pdfSafe(shown);
   return (
     <Document title={`Purchase order ${model.number}`} author={model.company.name}>
       <Page size="LETTER" style={styles.page}>

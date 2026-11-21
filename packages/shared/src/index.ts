@@ -11,6 +11,7 @@ export * from "./permissions/lifecycle-dates";
 export * from "./auth-proxy";
 export * from "./money";
 export * from "./decimal-text";
+export * from "./sentence";
 export * from "./units";
 export * from "./numbers";
 export * from "./documents";
