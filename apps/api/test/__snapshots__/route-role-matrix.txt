@@ -13,6 +13,7 @@ GET /commissions  flooring: owner hr  hr: owner hr
 GET /company  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
 GET /contract-billings  flooring: owner manager accountant sales  hr: -
 GET /contract-lines  flooring: owner manager accountant sales  hr: -
+GET /contract-schedule  flooring: owner manager accountant sales  hr: -
 GET /contractor-payments  flooring: owner accountant hr  hr: owner hr
 GET /contracts  flooring: owner manager accountant sales  hr: -
 GET /customers  flooring: owner manager accountant sales  hr: -

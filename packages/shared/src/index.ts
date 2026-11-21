@@ -54,6 +54,7 @@ export * from "./accounting";
 export * from "./contracts/billing";
 export * from "./contracts/documents";
 export * from "./contracts/rules";
+export * from "./contracts/schedule";
 export * from "./hr/pay";
 export * from "./hr/california";
 export * from "./hr/pay-run";

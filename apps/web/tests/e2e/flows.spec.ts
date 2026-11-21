@@ -63,6 +63,10 @@ test.describe("flow 1 (spec H)", () => {
       await expect(invoiceStatus(page)).toHaveText("Deposit paid");
 
       await stock.getByRole("button", { name: "Cut", exact: true }).click();
+      await page
+        .getByRole("dialog", { name: /^Cut .+ ft from roll / })
+        .getByRole("button", { name: /^Cut .+ ft$/ })
+        .click();
       await expect(stock.getByText("Cut", { exact: true })).toBeVisible();
 
       await page.getByRole("button", { name: "Record payment" }).click();

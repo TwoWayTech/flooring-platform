@@ -267,8 +267,13 @@ flowTest.describe("flow F1: sales from a new customer to the cut and a voided de
           new RegExp(`^/api-proxy/reservations/${hold.reservationId}/issue$`),
         );
         await row.getByRole("button", { name: "Cut", exact: true }).click();
+        // The cut asks first, naming the length and the roll (click-through #17).
+        const confirm = page.getByRole("dialog", { name: new RegExp(`^Cut .+ ft from roll ${parent.rollNumber}\\?$`) });
+        await confirm.getByRole("button", { name: /^Cut .+ ft$/ }).click();
         expect((await issued).status).toBe("issued");
-        await expect(page.getByText(`Cut for ${invoice.number}`, { exact: true })).toBeVisible();
+        await expect(
+          page.getByText(new RegExp(`^Cut .+ ft from roll ${parent.rollNumber} for ${invoice.number}$`)),
+        ).toBeVisible();
         await expect(row).toHaveCount(0);
 
         // The cut may leave a remnant: the parent's length now plus any new remnant's is what it had less the cut.

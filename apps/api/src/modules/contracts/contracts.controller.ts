@@ -228,6 +228,15 @@ export class ContractsController {
     return this.contracts.listBillings(tenant, access);
   }
 
+  /** GET /contract-schedule: each line's billed, retained and remaining money, and what each release paid out. */
+  @Get("contract-schedule")
+  @RequirePermission("contracts.billing.view")
+  schedule(@CurrentTenant() tenant: TenantContext, @CurrentAccess() access: RequestAccess) {
+    requireFeature("contracts.register");
+    requireFeature("contracts.billing");
+    return this.contracts.schedule(tenant, access);
+  }
+
   /** GET /lien-waivers: the waivers on those contracts. */
   @Get("lien-waivers")
   @RequirePermission("contracts.compliance.view")
