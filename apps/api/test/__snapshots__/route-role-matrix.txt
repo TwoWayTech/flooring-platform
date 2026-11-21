@@ -130,8 +130,8 @@ POST /pay-periods/:id/approve  flooring: owner hr  hr: owner hr
 POST /pay-periods/:id/exclusions  flooring: owner hr  hr: owner hr
 POST /pay-periods/:id/export  flooring: owner accountant hr  hr: owner hr
 POST /pay-periods/:id/reopen  flooring: owner hr  hr: owner hr
-POST /payments  flooring: owner manager accountant sales  hr: -
-POST /payments/:id/files  flooring: owner manager accountant sales  hr: -
+POST /payments  flooring: owner manager accountant  hr: -
+POST /payments/:id/files  flooring: owner manager accountant  hr: -
 POST /payments/:id/review  flooring: owner accountant  hr: -
 POST /payments/:id/void  flooring: owner accountant  hr: -
 POST /pto-requests  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
