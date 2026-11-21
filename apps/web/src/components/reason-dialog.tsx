@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@workspace/ui/components/dialog";
 import { Textarea } from "@workspace/ui/components/textarea";
+import { retryToast } from "@/lib/api/retry";
 import { Field } from "./field";
 
 interface ReasonDialogProps {
@@ -26,8 +27,8 @@ interface ReasonDialogProps {
 
 /**
  * Asks why before a correction that the audit log keeps (spec Appendix A: reject, void and
- * write-off need a reason). The reason must say something; errors from the store become a toast
- * with Try again.
+ * write-off need a reason). The reason must say something; errors from the store become a toast,
+ * with Try again only when a retry could help (click-through #12).
  */
 export function ReasonDialog({ title, description, confirmLabel, destructive, onConfirm, onClose }: ReasonDialogProps) {
   const [reason, setReason] = useState("");
@@ -46,9 +47,10 @@ export function ReasonDialog({ title, description, confirmLabel, destructive, on
       await onConfirm(reason.trim());
       onClose();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Not saved.", {
-        action: { label: "Try again", onClick: () => void submit() },
-      });
+      toast.error(
+        e instanceof Error ? e.message : "Not saved.",
+        retryToast(e, () => void submit()),
+      );
     } finally {
       setPending(false);
     }

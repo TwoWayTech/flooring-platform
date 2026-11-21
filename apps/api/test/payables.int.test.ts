@@ -359,6 +359,32 @@ describe("payables API (needs the local PostgreSQL)", () => {
     );
   });
 
+  it("answers a receipt's damaged units and note, and lets a flagged bill be paid (click-through #24, #25)", async () => {
+    const supplier = await newSupplier();
+    const po = await order(supplier, "100");
+    const recorded = await call("post", `/purchase-orders/${po.id}/receipts`, cookies.owner)
+      .send({
+        locationId: "",
+        note: "  Crushed corner  ",
+        lines: [{ poLineId: po.lineId, productId: po.productId, received: "40", damaged: "20", rolls: [] }],
+      })
+      .expect(201);
+    const listed = (await call("get", "/receipts", cookies.purchasing).expect(200)).body as {
+      id: string;
+      note: string;
+      lines: { received: string; damaged: string }[];
+    }[];
+    const receipt = listed.find((r) => r.id === recorded.body.id)!;
+    expect(receipt.note).toBe("Crushed corner");
+    expect(receipt.lines.map((l) => [dec(l.received).toString(), dec(l.damaged).toString()])).toEqual([["40", "20"]]);
+    // Purchasing.md rule 21 flags a difference and does not block it; nothing holds the payment either,
+    // so the screen asks "Pay anyway?" and the API takes the payment.
+    const bill = (await enterBill(po, { total: "93.04" }).expect(201)).body as BillBody;
+    expect(bill.matchIssues[0]).toContain("over by $9.04");
+    const paid = (await pay(cookies.purchasing, supplier, "93.04").expect(201)).body as PaymentBody;
+    expect(paid.allocations).toEqual([{ billId: bill.id, amount: "93.04" }]);
+  });
+
   it("confirms a payment under the threshold, allocates oldest due first and refuses too much", async () => {
     const supplier = await newSupplier();
     const older = await billedOrder(supplier, "100", shiftDays(companyDay(), -40));

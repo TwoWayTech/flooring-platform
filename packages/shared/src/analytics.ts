@@ -379,17 +379,14 @@ export interface StatementDocs {
 export function customerStatement(docs: StatementDocs, customerId: string): StatementLine[] {
   const own = docs.invoices.filter((i) => i.customerId === customerId && !i.voidedAt);
   const numberOf = (invoiceId: string) => docs.invoices.find((i) => i.id === invoiceId)?.number ?? "";
-  const events: { date: string; kind: StatementLine["kind"]; reference: string; amount: Dec }[] = [
-    ...own
-      .filter((i) => !i.isReturn)
-      .map((i) => ({ date: i.issuedAt, kind: "invoice" as const, reference: i.number, amount: dec(i.total) })),
-    ...own
-      .filter((i) => i.isReturn && !i.refundedAt)
-      .map((i) => ({ date: i.issuedAt, kind: "credit" as const, reference: i.number, amount: dec(i.total).negated() })),
+  const events: StatementEvent[] = [
+    ...own.filter((i) => !i.isReturn).map((i) => documentEvent(i, "invoice", dec(i.total))),
+    ...own.filter((i) => i.isReturn && !i.refundedAt).map((i) => documentEvent(i, "credit", dec(i.total).negated())),
     ...docs.payments
       .filter((p) => p.customerId === customerId && p.status === "confirmed")
       .map((p) => ({
         date: p.date,
+        at: p.recordedAt,
         kind: "payment" as const,
         reference: `${p.number} for ${numberOf(p.invoiceId)}`,
         amount: dec(p.amount).negated(),
@@ -398,14 +395,15 @@ export function customerStatement(docs: StatementDocs, customerId: string): Stat
       .filter((a) => a.customerId === customerId && a.kind === "write_off")
       .map((a) => ({
         date: a.at.slice(0, 10),
+        at: a.at,
         kind: "write_off" as const,
         reference: numberOf(a.invoiceId),
         amount: dec(a.amount).negated(),
       })),
     ...docs.refunds
       .filter((r) => r.customerId === customerId && r.status === "completed")
-      .map((r) => ({ date: r.date, kind: "refund" as const, reference: r.number, amount: dec(r.amount) })),
-  ].sort((a, b) => a.date.localeCompare(b.date) || STATEMENT_ORDER[a.kind] - STATEMENT_ORDER[b.kind]);
+      .map((r) => ({ date: r.date, at: r.at, kind: "refund" as const, reference: r.number, amount: dec(r.amount) })),
+  ].sort(byStatementOrder);
   let running = dec(0);
   return events.map((e) => {
     running = running.plus(e.amount);
@@ -419,7 +417,25 @@ export function customerStatement(docs: StatementDocs, customerId: string): Stat
   });
 }
 
-/** On the same day, what was billed comes before what settled it. */
+/** One statement line before the running balance: its day, when it was recorded, and its signed amount. */
+interface StatementEvent {
+  date: string;
+  /** When it was recorded (to the minute), if known; orders the lines of one day. */
+  at: string | undefined;
+  kind: StatementLine["kind"];
+  reference: string;
+  amount: Dec;
+}
+
+const documentEvent = (i: Invoice, kind: "invoice" | "credit", amount: Dec): StatementEvent => ({
+  date: i.issuedAt,
+  at: i.createdAt,
+  kind,
+  reference: i.number,
+  amount,
+});
+
+/** Without a recorded time, on the same day what was billed comes before what settled it. */
 const STATEMENT_ORDER: Record<StatementLine["kind"], number> = {
   invoice: 0,
   credit: 1,
@@ -427,6 +443,19 @@ const STATEMENT_ORDER: Record<StatementLine["kind"], number> = {
   write_off: 3,
   refund: 4,
 };
+
+/**
+ * Statement lines read chronologically (click-through #19): by day, then by the time each was
+ * recorded, so a deposit taken in the morning comes before a credit note issued that afternoon.
+ * Lines without a recorded time, or recorded in the same minute, fall back to STATEMENT_ORDER.
+ */
+function byStatementOrder(a: StatementEvent, b: StatementEvent): number {
+  return (
+    a.date.localeCompare(b.date) ||
+    (a.at && b.at ? a.at.localeCompare(b.at) : 0) ||
+    STATEMENT_ORDER[a.kind] - STATEMENT_ORDER[b.kind]
+  );
+}
 
 /** What an installation job cost and earned. */
 export interface JobCosting {

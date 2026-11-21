@@ -89,6 +89,7 @@ export function InvoicePage({ invoiceId }: { invoiceId: string }) {
   const open = dec(ledger.balance).gt(0) && ledger.state !== "void" && ledger.state !== "return";
   const canRecord = paymentsOn && open && can("sales.payment.record");
   const installs = featureOn("installation.calendar") && can("installation.job.view");
+  const creditNotes = sales.invoices.filter((i) => i.isReturn && i.creditForInvoiceId === invoiceId && !i.voidedAt);
 
   async function onDownload() {
     setPending(true);
@@ -154,6 +155,7 @@ export function InvoicePage({ invoiceId }: { invoiceId: string }) {
         quoteNumber={quote?.number ?? null}
         job={installs ? job : undefined}
         canSchedule={installs && can("installation.job.create") && !invoice.voidedAt && !invoice.isReturn}
+        creditNotes={creditNotes}
       />
       <InvoiceTimeline steps={timelineSteps(invoice, ledger, payments, job, users, installs)} />
       {paymentsOn && can("sales.payment.view") ? (

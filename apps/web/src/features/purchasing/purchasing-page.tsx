@@ -41,6 +41,7 @@ import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
 import { NewOrderDialog } from "./new-order-dialog";
 import { OrderDrawer } from "./order-drawer";
+import { OWED_ON_BILLS, PO_NOT_PAID_HEADER, PO_NOT_PAID_NOTE } from "./owed-labels";
 import { BillDrawer } from "./bill-drawer";
 import { PoStatusPill } from "./po-status";
 import { SupplierDrawer } from "./supplier-drawer";
@@ -194,7 +195,7 @@ export function PurchasingPage() {
     ...(money
       ? [
           { id: "total", header: "Total", kind: "money" as const, value: (p: PurchaseOrder) => p.total, total: true },
-          { id: "remaining", header: "Remaining", kind: "money" as const, value: poRemaining, total: true },
+          { id: "remaining", header: PO_NOT_PAID_HEADER, kind: "money" as const, value: poRemaining, total: true },
         ]
       : []),
   ];
@@ -384,7 +385,8 @@ export function PurchasingPage() {
       ) : null}
       {money && d ? (
         <p className="text-muted-foreground text-xs">
-          <Num kind="money" value={payablesSummary(d.bills, ledgers, today).total} /> owed to suppliers in all.
+          <Num kind="money" value={payablesSummary(d.bills, ledgers, today).total} /> {OWED_ON_BILLS}
+          {view === "orders" ? ` ${PO_NOT_PAID_NOTE}` : null}
         </p>
       ) : null}
     </>

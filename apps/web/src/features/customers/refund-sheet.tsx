@@ -26,6 +26,7 @@ import {
 import { Textarea } from "@workspace/ui/components/textarea";
 import { Field } from "@/components/field";
 import { api } from "@/lib/api";
+import { retryToast } from "@/lib/api/retry";
 import { ProofFilesField } from "@/features/invoices/payments/proof-files-field";
 
 const ORDER: (keyof RefundErrors)[] = ["amount", "date", "reference"];
@@ -72,9 +73,10 @@ export function RefundSheet({
       toast.success(`${refund.number} recorded for ${customer.name}`);
       onClose();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "The refund was not saved.", {
-        action: { label: "Try again", onClick: () => void submit() },
-      });
+      toast.error(
+        error instanceof Error ? error.message : "The refund was not saved.",
+        retryToast(error, () => void submit()),
+      );
     } finally {
       setPending(false);
     }
