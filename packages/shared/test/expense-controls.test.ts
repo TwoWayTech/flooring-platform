@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { expenseApprovalLoosened, overtimeRuleChanged, type ExpenseSettings } from "../src";
+import { DEFAULT_OVERTIME_RULE, expenseApprovalLoosened, overtimeRuleChanged, type ExpenseSettings } from "../src";
 
 const STORED: ExpenseSettings = { approvalRequired: true, approvalThreshold: "1000.00" };
 
@@ -39,10 +39,27 @@ describe("expense approval only an Owner may loosen (ADR 0061 decision 6, ADR 00
 });
 
 describe("a new overtime rule needs a step-up; the holiday calendar alone does not (ADR 0063)", () => {
-  it("OR1 the same rule is no change, another rule or none stored is", () => {
+  it("OR1 the same rule is no change; another rule is", () => {
     expect(overtimeRuleChanged({ overtimeRule: "federal" }, { overtimeRule: "federal" })).toBe(false);
     expect(overtimeRuleChanged({ overtimeRule: "federal" }, { overtimeRule: "california" })).toBe(true);
-    expect(overtimeRuleChanged({ overtimeRule: "federal" }, undefined)).toBe(true);
-    expect(overtimeRuleChanged({ overtimeRule: "federal" }, {})).toBe(true);
+    expect(overtimeRuleChanged({ overtimeRule: "california" }, { overtimeRule: "federal" })).toBe(true);
+  });
+
+  it("OR2 a missing tab or rule is the federal default: repairing it with that rule is no change, another rule is", () => {
+    expect(DEFAULT_OVERTIME_RULE).toBe("federal");
+    for (const missing of [undefined, null, {}, { overtimeRule: undefined }, { overtimeRule: null }]) {
+      expect(overtimeRuleChanged({ overtimeRule: "federal" }, missing), JSON.stringify(missing)).toBe(false);
+      expect(overtimeRuleChanged({ overtimeRule: "california" }, missing), JSON.stringify(missing)).toBe(true);
+    }
+  });
+
+  it("OR3 a malformed stored rule can't be compared, so any save over it is a change", () => {
+    for (const odd of [
+      { overtimeRule: "weekly" },
+      { overtimeRule: 40 },
+      { overtimeRule: "toString" },
+      { overtimeRule: {} },
+    ])
+      expect(overtimeRuleChanged({ overtimeRule: "federal" }, odd), JSON.stringify(odd)).toBe(true);
   });
 });

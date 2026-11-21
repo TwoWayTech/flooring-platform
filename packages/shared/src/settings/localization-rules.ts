@@ -5,7 +5,12 @@ import { PAYMENT_TERM_LABELS } from "../operations/quotes";
 import type { PermissionKey } from "../permissions/catalog";
 import type { ProductCategory } from "../types";
 import type { LocalizationSettings, WasteCategory } from "../types/settings";
-import { OVERTIME_RULE_MESSAGE, overtimeRuleProblem } from "../us-pack/overtime";
+import {
+  OVERTIME_RULE_LABELS,
+  OVERTIME_RULE_MESSAGE,
+  overtimeRuleProblem,
+  type OvertimeRule,
+} from "../us-pack/overtime";
 import { isStateCode } from "../us-pack/states";
 // Region's tax key comes from the one table of tab keys (CLAUDE.md rule 4; ADR 0059, part 2b), so
 // this file is no longer a leaf. sections.ts and tax-settings.ts import nothing from settings/, so
@@ -186,15 +191,27 @@ export function payrollProblem(payroll: PayrollInput): string | null {
 }
 
 /**
- * Whether a Payroll rules save changes the overtime rule, which changes everyone's overtime pay, so
- * it needs a step-up (ADR 0063); the holiday calendar alone does not. `current` is the stored tab, or
- * undefined when none is stored, which counts as a change (the safest reading).
+ * The overtime rule a company follows when none is stored: the federal rule (40 hours a week, FLSA),
+ * which applies in every state unless a state rule is chosen (ADR 0050).
+ */
+export const DEFAULT_OVERTIME_RULE = "federal" satisfies OvertimeRule;
+
+/**
+ * Whether a Payroll rules save changes the overtime rule in effect, which changes everyone's
+ * overtime pay, so it needs a step-up (ADR 0063); the holiday calendar alone does not. A missing tab
+ * or a tab without a rule is compared as `DEFAULT_OVERTIME_RULE`, so a save that repairs it with that
+ * same rule changes nothing and needs no code. A stored rule that isn't one of the rules (another
+ * type, or an unknown name) can't be compared, so any save over it counts as a change (the safest
+ * reading).
  */
 export function overtimeRuleChanged(
   next: Pick<PayrollInput, "overtimeRule">,
-  current: { overtimeRule?: unknown } | undefined,
+  current: { overtimeRule?: unknown } | null | undefined,
 ): boolean {
-  return current?.overtimeRule !== next.overtimeRule;
+  const stored = current?.overtimeRule;
+  if (stored === undefined || stored === null) return next.overtimeRule !== DEFAULT_OVERTIME_RULE;
+  if (typeof stored !== "string" || !Object.hasOwn(OVERTIME_RULE_LABELS, stored)) return true;
+  return stored !== next.overtimeRule;
 }
 
 // Region and Currency (ADR 0059, part 2b).
