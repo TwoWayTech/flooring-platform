@@ -26,6 +26,7 @@ import { v7 as uuidv7 } from "uuid";
 import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
+import { StepUpService } from "../../core/auth/step-up.service";
 import { CONTROL_DB } from "../../core/database/control-db";
 import { STORAGE } from "../../core/storage/storage.module";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
@@ -74,6 +75,7 @@ export class PeopleService {
     @Inject(STORAGE) private readonly storage: StorageProvider,
     private readonly tenancy: TenantConnectionService,
     private readonly auditLog: AuditService,
+    private readonly stepUp: StepUpService,
   ) {}
 
   /**
@@ -97,7 +99,8 @@ export class PeopleService {
    * exempt or non-exempt; only an exempt person has an exemption basis; with the California pay
    * rules on, a California salary covers 40 hours (Labor Code 515; ADR 0050). A new person gets the
    * onboarding checklist. Setting or moving a manager adds to the dated manager history on the
-   * company's day (`recordManager`), so overrides follow the manager on each sale's day.
+   * company's day (`recordManager`), so overrides follow the manager on each sale's day. An edit
+   * that changes the person's pay facts needs a step-up (ADR 0063); adding a person does not.
    */
   async save(tenant: TenantContext, actor: Actor, id: string | null, input: EmployeeFields): Promise<Employee> {
     const name = input.name.trim();
@@ -189,6 +192,13 @@ export class PeopleService {
           await recordManager(tx, row.id, before, values.managerId, today, actor.access.userId);
         }
         if (input.userId !== undefined) await this.link(tx, actor, row.id, input.userId);
+        // A changed rate, pay type, worker type, overtime status, salaried hours, work state, manager
+        // or sign-in link changes the rules this person's pay follows, so it needs a step-up (ADR
+        // 0063). Asked after every check, the link's included; a refusal rolls this transaction back,
+        // so nothing above is kept.
+        if (before && payFactsChanged(before, values, linkedBefore, input.userId)) {
+          await this.stepUp.require(actor.session);
+        }
         // The sign-in link before and after, on every entry: whose commission is paid to this person
         // follows it, so statement and pay-run approvals read link changes from here (third security
         // review of PR #27; ADR 0048).
@@ -562,6 +572,37 @@ async function recordManager(
 
 /** What decides a person's pay: their rate, pay type, worker type, overtime status and salaried hours. */
 type PayFacts = Pick<EmployeeRow, "payRate" | "payType" | "workerType" | "flsaStatus" | "salaryHoursPerWeek">;
+
+/**
+ * The stored fields that decide how a person is paid, so changing one needs a step-up (ADR 0063):
+ * the `PayFacts`, the work state (which overtime and pay rules apply) and the manager (who is paid
+ * an override on their sales).
+ */
+const STEP_UP_FIELDS = [
+  "payRate",
+  "payType",
+  "workerType",
+  "flsaStatus",
+  "salaryHoursPerWeek",
+  "state",
+  "managerId",
+] as const satisfies readonly (keyof EmployeeValues)[];
+
+/**
+ * Whether a save changes what decides a person's pay (ADR 0063): a `STEP_UP_FIELDS` field, compared
+ * as `fieldChanged` compares them, or the sign-in link, which decides whose commission is paid to
+ * them (`requested` is the link sent, undefined when the save leaves it alone).
+ */
+function payFactsChanged(
+  before: EmployeeRow,
+  after: EmployeeValues,
+  linked: readonly string[],
+  requested: string | null | undefined,
+): boolean {
+  if (STEP_UP_FIELDS.some((key) => fieldChanged(key, before, after))) return true;
+  if (requested === undefined) return false;
+  return requested ? !(linked.length === 1 && linked[0] === requested) : linked.length > 0;
+}
 
 /** The fields a person edits, for audit entries: never the pay rate (CLAUDE.md rule 5). */
 function editable(row: EmployeeRow) {

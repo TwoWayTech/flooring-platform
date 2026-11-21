@@ -185,6 +185,10 @@ const SELF_MADE =
  * base hidden, approval with its postings and separation of duties, adjustments and reversal decisions,
  * the pay run that pays an approved statement outside Wages, team totals and audit without amounts.
  */
+/** The writes in this suite that need a step-up (ADR 0063). */
+const STEPPED_UP =
+  /^\/(pay-periods\/[^/]+\/(approve|reopen)|commission-plans(\/[^/]+)?|commission-assignments|employees\/[^/]+)$/;
+
 describe("commissions API (needs the local PostgreSQL)", () => {
   const harness = new AuthHarness();
   let company = { id: "", slug: "" };
@@ -255,8 +259,15 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     return test;
   }
 
-  const send = (method: "post" | "put", path: string, cookie: string, body: Record<string, unknown> = {}) =>
-    call(method, path, cookie).send(body);
+  /**
+   * A write. Approving or reopening a pay period, saving a commission plan, putting someone on a
+   * plan and editing an employee (a step-up when their pay facts change) need a step-up (ADR 0063),
+   * so those get one first; the step-up test below checks the refusals without one.
+   */
+  const send = async (method: "post" | "put", path: string, cookie: string, body: Record<string, unknown> = {}) => {
+    if (STEPPED_UP.test(path)) await harness.grantStepUp(cookie);
+    return call(method, path, cookie).send(body);
+  };
 
   /** Asserts a status and shows the body when it differs. */
   function status(response: Response, expected: number): void {
@@ -732,6 +743,12 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     expect(extra.body.code).toBe("invalid_request");
     // A deciding sign-in must be linked to an employee, unless it is the Owner's.
     status(await send("post", "/commission-plans", cookies.hrC, planBody()), 400);
+    // A plan is a rule pay follows: adding one without a fresh step-up is refused and nothing is
+    // written (ADR 0063); `own` steps up first, so the next one is 201.
+    await harness.dropStepUp(cookies.hrA);
+    const unconfirmed = await call("post", "/commission-plans", cookies.hrA).send(planBody());
+    expect([unconfirmed.status, unconfirmed.body.code]).toEqual([403, "step_up_required"]);
+    expect(await auditOf("Added commission plan")).toHaveLength(0);
 
     const added = await own({});
     status(added, 201);
@@ -750,6 +767,13 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     });
     ids.flat = added.body.id as string;
     refused(await own({}), "Another plan already has this name.");
+    // Changing a plan without a fresh step-up is refused too, and the plan stays as it was.
+    await harness.dropStepUp(cookies.hrA);
+    const unedited = await call("put", `/commission-plans/${ids.flat}`, cookies.hrA).send(
+      planBody({ baseRatePct: "5" }),
+    );
+    expect([unedited.status, unedited.body.code]).toEqual([403, "step_up_required"]);
+    expect((await data()).plans.find((p) => p.id === ids.flat)).toMatchObject({ baseRatePct: "4" });
     // No statement is approved yet, so a save edits in place: same plan, same version.
     const edited = await send("put", `/commission-plans/${ids.flat}`, cookies.hrA, planBody({ baseRatePct: "5" }));
     status(edited, 200);
@@ -803,6 +827,12 @@ describe("commissions API (needs the local PostgreSQL)", () => {
       "Enter the monthly target in dollars and cents, or leave it blank.",
     );
     status(await assign(cookies.hrA, { role: "owner" }), 400);
+    // Putting someone on a plan changes the rule their pay follows: refused without a fresh step-up
+    // and nothing is written (ADR 0063); `assign` steps up first, so the next one is 201.
+    await harness.dropStepUp(cookies.hrA);
+    const unconfirmed = await call("post", "/commission-assignments", cookies.hrA).send(assignBody());
+    expect([unconfirmed.status, unconfirmed.body.code]).toEqual([403, "step_up_required"]);
+    expect((await data()).assignments.filter((a) => a.userId === ids.repA)).toEqual([]);
 
     const first = await assign(cookies.hrA);
     status(first, 201);

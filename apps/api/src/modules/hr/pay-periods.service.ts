@@ -42,6 +42,7 @@ import { and, asc, eq, gte, inArray, isNull, lte, max, ne } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
+import { StepUpService } from "../../core/auth/step-up.service";
 import { CONTROL_DB } from "../../core/database/control-db";
 import { LedgerService } from "../../core/ledger/ledger.service";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
@@ -164,6 +165,7 @@ export class PayPeriodsService {
     private readonly tenancy: TenantConnectionService,
     private readonly auditLog: AuditService,
     private readonly books: LedgerService,
+    private readonly stepUp: StepUpService,
   ) {}
 
   /** Every pay period, newest first. */
@@ -347,6 +349,9 @@ export class PayPeriodsService {
    * whether a time-off policy is paid since someone else last approved a run; and the
    * approver's sign-in must be linked to their employee. The lines are frozen, time off accrues
    * (rule 12) and the gross pay posts to Wages against Accrued Payroll, all in one transaction.
+   * Approving commits everyone's pay at once, so it needs a step-up from the last 5 minutes (403
+   * `step_up_required`; owner's decision 4, ADR 0061; ADR 0063), asked after every other check so
+   * a run that can't be approved never costs a code.
    */
   async approve(tenant: TenantContext, actor: Actor, id: string): Promise<PayPeriod> {
     const db = await this.tenancy.db(tenant);
@@ -381,6 +386,7 @@ export class PayPeriodsService {
           `${names.join(", ")}: unpaid leave takes gross pay below the commission this run pays. Fix the leave, or leave them out so the commission waits for the next run.`,
         );
       }
+      await this.stepUp.require(actor.session);
       const now = await databaseNow(tx);
       await tx
         .update(payPeriods)
@@ -421,7 +427,8 @@ export class PayPeriodsService {
    * Returns an approved run to review before it is exported (hr.md "approved to in_review"). Nothing
    * is edited (CLAUDE.md rule 9): the payroll entry is reversed on today's date, each accrual it
    * posted is taken back by a negative accrual line, and the frozen lines are retired. An exported
-   * run can't be reopened.
+   * run can't be reopened. Like approving, it needs a step-up (ADR 0063), asked after the status and
+   * decider checks and before anything is reversed.
    */
   async reopen(tenant: TenantContext, actor: Actor, id: string): Promise<PayPeriod> {
     const db = await this.tenancy.db(tenant);
@@ -432,6 +439,7 @@ export class PayPeriodsService {
       if (period.status === "exported") throw refuse("An exported pay period can't be reopened.");
       if (period.status !== "approved") throw refuse("Only an approved pay period can be reopened.");
       await requireLinkedDecider(tx, actor.access);
+      await this.stepUp.require(actor.session);
       // People whose accrual comes back are locked before the ledger's shared lock, as approve
       // locks them (third security review of PR #26).
       await this.lockAccrualPeople(tx, period.id);

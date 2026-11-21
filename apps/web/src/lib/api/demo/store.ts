@@ -2,6 +2,8 @@
 import { browserDay, clockInOrBrowser, dayInOrBrowser } from "../company-day";
 import {
   branchManageDenial,
+  EXPENSE_APPROVAL_OWNER_ONLY,
+  expenseApprovalLoosened,
   PAYMENT_CONTROLS_OWNER_ONLY,
   hrFrequencyProblem,
   hrScheduleProblem,
@@ -897,7 +899,8 @@ export class DemoStore implements ApiClient {
    * Replaces one settings section with the API's checks in the API's order (ADR 0059; spec rule 7):
    * module, keys, switch, scope (`assertSettingsSave`), then the shared content rules against the
    * stored section and, for Shared costs, the live locations (ADR 0059, part 4b, D8), then Payments'
-   * and Stock rules' Owner-only loosening (`paymentControlsLoosened`, `stockRulesLoosened`) and
+   * Stock rules' and Expense approval's Owner-only loosening (`paymentControlsLoosened`,
+   * `stockRulesLoosened`, `expenseApprovalLoosened`) and
    * Settings → HR's schedule lock and monthly rule against the demo's own records (part 5).
    * Localization and tax is never replaced whole: after those checks it is refused with
    * "Localization and tax saves one tab at a time." and nothing is stored or audited; screens save
@@ -918,6 +921,10 @@ export class DemoStore implements ApiClient {
     // So is raising or clearing the adjustment approval quantity (ADR 0059, the Stock rules part, D4).
     if (next.inventory && !access.isOwner && stockRulesLoosened(next.inventory, db.settings.inventory)) {
       throw new DemoRuleError(STOCK_RULES_OWNER_ONLY);
+    }
+    // And switching expense approval off or raising its amount (owner's decision 6, ADR 0063).
+    if (next.expenses && !access.isOwner && expenseApprovalLoosened(next.expenses, db.settings.expenses)) {
+      throw new DemoRuleError(EXPENSE_APPROVAL_OWNER_ONLY);
     }
     // Settings → HR doesn't re-cut recorded pay, as on the API (ADR 0059, part 5, D4 and D5).
     const hrProblem = next.hr ? this.hrRecordsProblem(db, next.hr) : null;

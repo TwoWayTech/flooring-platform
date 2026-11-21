@@ -7,6 +7,8 @@ import {
   datedRates,
   documentsProblem,
   emailSettingsProblem,
+  EXPENSE_APPROVAL_OWNER_ONLY,
+  expenseApprovalLoosened,
   expenseSettingsProblem,
   hrFrequencyProblem,
   hrScheduleProblem,
@@ -15,6 +17,7 @@ import {
   LOCALIZATION_TABS,
   numberSettingsProblem,
   numbersToWire,
+  overtimeRuleChanged,
   PAYMENT_CONTROLS_OWNER_ONLY,
   paymentControlsLoosened,
   paymentSettingsProblem,
@@ -93,7 +96,8 @@ function check(problem: string | null): void {
  * whose checks against recorded pay run under the `hr` row's lock. Part 6 adds Branding, the one
  * save that writes the control database: the company's own branding row. The bell and Outbox part
  * adds Settings → Email, the sender details, with a step-up on every save. The Stock rules part
- * adds the adjustment approval quantity, whose loosening is the Owner's with a step-up.
+ * adds the adjustment approval quantity, whose loosening is the Owner's with a step-up. ADR 0063
+ * makes loosening Expense approval the Owner's with a step-up too, and a new overtime rule need one.
  */
 @ApiTags("settings")
 @ApiCookieAuth()
@@ -197,7 +201,14 @@ export class SettingsController {
     return payments;
   }
 
-  /** PUT /settings/expenses: expense approval, which the API's expenses apply. No step-up (ADR 0059 Q1). */
+  /**
+   * PUT /settings/expenses: expense approval, which the API's expenses apply. Under the row's lock and
+   * against the stored section (approval off when never saved, as expenses read it): switching the
+   * check off or raising its amount loosens it, so it is the Owner's alone (403 `owner_only`) with a
+   * step-up (403 `step_up_required`), both after the content rule so a refused value never costs a
+   * code (owner's decision 6, ADR 0061; ADR 0063), as Payments and Stock rules. Keeping or tightening
+   * needs only the key, with no step-up (ADR 0059 Q1).
+   */
   @Put("expenses")
   @RequirePermission(...SETTINGS_SECTIONS.expenses.keys)
   @RequireModule(SETTINGS_SECTIONS.expenses.module)
@@ -213,7 +224,21 @@ export class SettingsController {
     requireWholeCompany(access);
     const expenses = parse(EXPENSES_INPUT, body);
     check(expenseSettingsProblem(expenses));
-    await this.settings.save(tenant, actorOf(access, session, request), "expenses", expenses, (value) => value);
+    await this.settings.save(
+      tenant,
+      actorOf(access, session, request),
+      "expenses",
+      expenses,
+      (value) => value,
+      async (current) => {
+        if (!expenseApprovalLoosened(expenses, current)) return;
+        if (!access.isOwner) throw new ForbiddenException({ code: "owner_only", message: EXPENSE_APPROVAL_OWNER_ONLY });
+        await this.stepUp.require(session);
+      },
+      // Two first saves at once are both judged against the never-saved answer (approval off): the
+      // second is a 409, so what is stored is always what its own judgement saw (as Stock rules).
+      "refuse",
+    );
     return expenses;
   }
 
@@ -421,8 +446,11 @@ export class SettingsController {
 
   /**
    * PUT /settings/localization/payroll: the Payroll rules tab (ADR 0059, part 2a). One key; module
-   * `hr`; the California rule is refused while its switch is off (ADR 0050). Only this tab of the
-   * localization row changes, and a company with no localization row gets 409. Answers the tab as saved.
+   * `hr`; the California rule is refused while its switch is off (ADR 0050). A new overtime rule
+   * changes everyone's overtime pay, so it needs a step-up, judged under the row's lock after the
+   * content rule (ADR 0063, as Region's states of operation); the holiday calendar alone needs none.
+   * Only this tab of the localization row changes, and a company with no localization row gets 409.
+   * Answers the tab as saved.
    */
   @Put("localization/payroll")
   @RequirePermission(...LOCALIZATION_TABS.payroll.keys)
@@ -439,7 +467,10 @@ export class SettingsController {
     requireWholeCompany(access);
     const payroll = parse(PAYROLL_INPUT, body);
     check(payrollProblem(payroll));
-    return this.settings.saveLocalizationTab(tenant, actorOf(access, session, request), "payroll", () => payroll);
+    return this.settings.saveLocalizationTab(tenant, actorOf(access, session, request), "payroll", async (current) => {
+      if (overtimeRuleChanged(payroll, current)) await this.stepUp.require(session);
+      return payroll;
+    });
   }
 
   /**

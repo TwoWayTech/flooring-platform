@@ -35,6 +35,7 @@ import { v7 as uuidv7 } from "uuid";
 import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
+import { StepUpService } from "../../core/auth/step-up.service";
 import { CONTROL_DB } from "../../core/database/control-db";
 import { loadAccountingForPosting } from "../../core/ledger/accounting-settings";
 import { loadExpenses, locationBranches, seesExpense, seesPayroll } from "../finance/expense-records";
@@ -84,6 +85,7 @@ export class PaymentsService {
     private readonly auditLog: AuditService,
     private readonly notifications: NotificationService,
     private readonly books: LedgerService,
+    private readonly stepUp: StepUpService,
   ) {}
 
   /**
@@ -410,6 +412,12 @@ export class PaymentsService {
     const clock = await companyClock(this.control.db, tenant);
     const [settings, money] = await Promise.all([loadPaymentSettings(db), loadMoneyFormat(db)]);
     const id = uuidv7();
+    // A refund sends money out, so it needs a fresh step-up (ADR 0063): asked after the refund's own
+    // checks against the credit as it reads now, and before any proof file is stored, so a refusal
+    // writes nothing anywhere. The checks run again under the customer's lock below.
+    const creditNowUnlocked = moneyString(await creditNow(db, this.control.db, customer.id, clock));
+    firstProblem(validateRefund(input, { credit: creditNowUnlocked, today: clock.day, formatMoney: money }));
+    await this.stepUp.require(actor.session);
     await withStoredProofs(this.storage, tenant.companyId, proofs, (attach) =>
       db.transaction(async (tx) => {
         await lockCustomer(tx, customer.id);

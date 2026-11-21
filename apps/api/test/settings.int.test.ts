@@ -18,6 +18,8 @@ import {
   DEFAULT_SHARED_COSTS,
   defaultNumberSettings,
   enabledModules,
+  EXPENSE_APPROVAL_OWNER_ONLY,
+  expenseApprovalLoosened,
   EXPENSE_MESSAGES,
   FEATURES,
   NUMBER_KINDS,
@@ -37,6 +39,7 @@ import {
   SETTINGS_SCOPE_MESSAGE,
   SETTINGS_SECTIONS,
   type CompanySettings,
+  type ExpenseSettings,
   type FeatureKey,
   type NumberSettings,
   type NumberSettingsWire,
@@ -49,10 +52,11 @@ import { and, asc, count, eq } from "drizzle-orm";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { v7 as uuidv7 } from "uuid";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { isAudited, permissionRequirement } from "../src/core/access/permission.decorators";
 import { PERMISSION_REFUSALS } from "../src/core/access/permission.guard";
 import { dayIn } from "../src/modules/sales/sales-common";
+import { SettingsService } from "../src/modules/settings/settings.service";
 import { AuthHarness } from "./auth-harness";
 import { platformHelpers } from "./support/platform-admins";
 
@@ -685,7 +689,7 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
     expect((await cardPayment(y.id, "1.00")).number).toBe("RCV-0001");
   });
 
-  it("A7 PUT /settings/expenses: the Owner without a step-up; the server applies the approval rule", async () => {
+  it("A7 PUT /settings/expenses: the Owner; the server applies the approval rule", async () => {
     const body = { approvalRequired: false, approvalThreshold: "" };
     for (const key of PRODUCT_ROLES.flooring) {
       const response = await put("expenses", people.get(`flooring:${key}`)!.cookie, SUMMIT.settings.expenses);
@@ -721,6 +725,8 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         asDraft: false,
         files: [PDF],
       });
+    // Switching approval off loosens it: the Owner's, with a step-up (ADR 0063; A17).
+    await stepUp(pay.owner);
     await put("expenses", pay.owner.cookie, body).expect(200);
     const free = await expense();
     expect(free.status, JSON.stringify(free.body)).toBe(201);
@@ -984,6 +990,100 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
     expect(await rowOf(payco, "payments")).toBeUndefined();
     await stepUp(pay.owner);
     await put("payments", pay.owner.cookie, loose).expect(200);
+  });
+
+  it("A17 only an Owner loosens expense approval, with a step-up, refused before the code; tightening needs neither (ADR 0063)", async () => {
+    const rules = SUMMIT.settings.expenses;
+    const dana = people.get("flooring:owner")!;
+    await stepUp(dana);
+    await put("expenses", dana.cookie, rules).expect(200);
+    const roleKey = "expense-approval-keeper";
+    await withCompanyDb(floorco, async (db) => {
+      const [role] = await db
+        .insert(roles)
+        .values({ key: roleKey, name: "Expense approval keeper", dataScope: "all" as const })
+        .returning();
+      await db.insert(rolePermissions).values({ roleId: role.id, permissionKey: SETTINGS_SECTIONS.expenses.keys[0] });
+    });
+    const keeper = await member(floorco, [roleKey], true);
+    const before = await rowOf(floorco, "expenses");
+    const audits = await auditCount(floorco);
+    const looser = [{ approvalRequired: false }, { approvalThreshold: "1000.01" }];
+    // Anyone but an Owner: refused with the Owner-only words, before any code is asked for.
+    for (const patch of looser) {
+      const refused = await put("expenses", keeper.cookie, { ...rules, ...patch });
+      expect([...outcome(refused), refused.body.message], JSON.stringify(patch)).toEqual([
+        403,
+        "owner_only",
+        EXPENSE_APPROVAL_OWNER_ONLY,
+      ]);
+    }
+    // The Owner without a fresh step-up: refused with the step-up code; nothing stored or audited.
+    await harness.dropStepUp(dana.cookie);
+    for (const patch of looser)
+      expect(outcome(await put("expenses", dana.cookie, { ...rules, ...patch })), JSON.stringify(patch)).toEqual([
+        403,
+        "step_up_required",
+      ]);
+    expect(await rowOf(floorco, "expenses")).toEqual(before);
+    expect(await auditCount(floorco)).toBe(audits);
+    // Keeping or tightening needs only the key: no step-up, for the keeper or the Owner.
+    await put("expenses", keeper.cookie, rules).expect(200);
+    const tighter = { approvalRequired: true, approvalThreshold: "500.00" };
+    await put("expenses", keeper.cookie, tighter).expect(200);
+    await put("expenses", keeper.cookie, { approvalRequired: true, approvalThreshold: "" }).expect(200);
+    // The Owner with a step-up loosens.
+    await harness.grantStepUp(dana.cookie);
+    await put("expenses", dana.cookie, { approvalRequired: false, approvalThreshold: "" }).expect(200);
+    await put("expenses", dana.cookie, rules).expect(200);
+    expect(await rowOf(floorco, "expenses")).toEqual(rules);
+  });
+
+  it("A18 two first expense-approval saves at once: the one that finds the row taken is a 409, so a loosening never slips past the Owner rule (ADR 0063)", async () => {
+    const company: TestCompany = { ...(await harness.provisionCompany("expenseraceco")), product: "flooring" };
+    const roleKey = "race-expense-approval";
+    await withCompanyDb(company, async (db) => {
+      const [role] = await db
+        .insert(roles)
+        .values({ key: roleKey, name: "Race expense approval", dataScope: "all" as const })
+        .returning();
+      await db.insert(rolePermissions).values({ roleId: role.id, permissionKey: SETTINGS_SECTIONS.expenses.keys[0] });
+    });
+    const owner = await member(company, ["owner"]);
+    const keeper = await member(company, [roleKey], true);
+    expect(await rowOf(company, "expenses")).toBeUndefined();
+    // Both are judged against the never-saved answer (approval off), so each alone is a tightening;
+    // stored one after the other, the keeper's would raise the Owner's amount without the Owner rule.
+    const answers = await Promise.all([
+      put("expenses", owner.cookie, { approvalRequired: true, approvalThreshold: "100.00" }),
+      put("expenses", keeper.cookie, { approvalRequired: true, approvalThreshold: "10000.00" }),
+    ]);
+    // Each is saved, or a 409 (it found the row taken), or, judged after the Owner's row, the keeper's
+    // raise is refused as a loosening (403 `owner_only`).
+    for (const answer of answers)
+      expect(["200", "409 conflict", "403 owner_only"], JSON.stringify(answer.body)).toContain(
+        answer.status === 200 ? "200" : `${answer.status} ${answer.body.code}`,
+      );
+    const entries = await auditsOf(company, "Changed expense approval");
+    expect(entries).toHaveLength(answers.filter((answer) => answer.status === 200).length);
+    expect(entries[0]!.before).toBeNull();
+    if (entries[1]) expect(entries[1].before).toEqual(entries[0]!.after);
+    expect(await rowOf(company, "expenses")).toEqual(entries.at(-1)!.after);
+    // Nobody here may loosen (the keeper isn't an Owner; the Owner gave no code): no stored change does.
+    const off: ExpenseSettings = { approvalRequired: false, approvalThreshold: "" };
+    for (const entry of entries)
+      expect(
+        expenseApprovalLoosened(entry.after as ExpenseSettings, (entry.before as ExpenseSettings | null) ?? off),
+      ).toBe(false);
+    // The route saves with `firstSave: "refuse"`, as Stock rules does.
+    const spy = vi.spyOn(harness.app.get(SettingsService), "save");
+    try {
+      await put("expenses", owner.cookie, await rowOf(company, "expenses")).expect(200);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy.mock.calls[0]!.at(-1)).toBe("refuse");
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("A14 two saves at once: both answered, both audited in order, the later one stored", async () => {

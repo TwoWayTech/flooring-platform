@@ -39,6 +39,7 @@ import { and, eq, gte, inArray, isNotNull, isNull, max, ne, or } from "drizzle-o
 import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
+import { StepUpService } from "../../core/auth/step-up.service";
 import { CONTROL_DB } from "../../core/database/control-db";
 import { LedgerService } from "../../core/ledger/ledger.service";
 import { NotificationService } from "../../core/notifications/notification.service";
@@ -136,6 +137,7 @@ export class CommissionsService {
     private readonly auditLog: AuditService,
     private readonly books: LedgerService,
     private readonly notifications: NotificationService,
+    private readonly stepUp: StepUpService,
   ) {}
 
   /**
@@ -368,7 +370,8 @@ export class CommissionsService {
    * that an approved or paid statement may have used (any statement from its start onward) is never
    * edited: the change becomes a new version from today, the old one retires yesterday, and its
    * people move to the new version and must sign again. A plan edited in place is signed again too
-   * (`resetSignatures`). Nobody changes a plan they are on.
+   * (`resetSignatures`). Nobody changes a plan they are on. A plan is a rule pay follows, so adding,
+   * changing or versioning one needs a step-up, asked after the other checks (ADR 0063).
    */
   async savePlan(tenant: TenantContext, actor: Actor, id: string | null, fields: PlanFields): Promise<CommissionPlan> {
     const problem = commissionPlanProblem(fields);
@@ -382,6 +385,7 @@ export class CommissionsService {
       await requireLinkedDecider(tx, actor.access);
       if (!id) {
         await this.nameFree(tx, name, 1);
+        await this.stepUp.require(actor.session);
         const [row] = await tx
           .insert(commissionPlans)
           .values({
@@ -425,6 +429,7 @@ export class CommissionsService {
           throw refuse("Someone else must change a plan that pays you an override.");
         }
       }
+      await this.stepUp.require(actor.session);
       const [used] = await tx
         .select({ id: commissionStatements.id })
         .from(commissionStatements)
@@ -479,6 +484,8 @@ export class CommissionsService {
       if (frozen && input.effectiveFrom <= monthEnd(frozen)) {
         throw refuse(`Start the plan after ${monthEnd(frozen)}, the end of the last approved statement.`);
       }
+      // Putting someone on a plan changes the rule their pay follows: a step-up, after the checks (ADR 0063).
+      await this.stepUp.require(actor.session);
       const existing = await tx
         .select()
         .from(commissionAssignments)

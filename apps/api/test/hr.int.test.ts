@@ -417,6 +417,9 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     cookies.hrSuiteHr = await enrolled(hrSuiteEmail);
     // The Owner decides what HR entered, since nobody else decides hours they entered (maker-checker).
     cookies.owner = await enrolled(await harness.addUser({ companyIds: [company.id], roles: ["owner"] }));
+    // Editing someone's pay facts needs a step-up (ADR 0063); here it is setup for the many edits,
+    // and the pay-rate test checks the refusal without one.
+    for (const cookie of [cookies.hr, cookies.hrSuiteHr, cookies.owner]) await harness.grantLastingStepUp(cookie);
   }, 180_000);
 
   afterAll(async () => {
@@ -583,6 +586,31 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     expect(added.body).not.toHaveProperty("payRate");
     expect(await storedPay(added.body.id)).toBe("0.00");
 
+    // A new rate changes the rule this person's pay follows: refused without a fresh step-up, and
+    // the stored rate stays (ADR 0063); with one it saves.
+    await harness.dropStepUp(cookies.hr);
+    const unconfirmed = await call("put", `/employees/${pat.id}`, cookies.hr).send(
+      form({ name: "Pat Payroll", title: "Lead", payRate: "80.00" }),
+    );
+    expect([unconfirmed.status, unconfirmed.body.code]).toEqual([403, "step_up_required"]);
+    expect(await storedPay(pat.id)).toBe("77.77");
+    // So do the work state (its overtime rules), the manager (paid overrides on this person's sales)
+    // and the sign-in link (whose commission is paid to this person); nothing changes.
+    const linkable = await harness.userIdOf(await harness.addUser({ companyIds: [company.id], roles: ["employee"] }));
+    for (const over of [{ state: "NM" }, { managerId: ids.mara }, { userId: linkable }]) {
+      const refused = await call("put", `/employees/${pat.id}`, cookies.hr).send(
+        form({ name: "Pat Payroll", title: "Lead", payRate: "77.77", ...over }),
+      );
+      expect([refused.status, refused.body.code], JSON.stringify(over)).toEqual([403, "step_up_required"]);
+    }
+    const [kept] = await rows((db) => db.select().from(employees).where(eq(employees.id, pat.id)));
+    expect({ state: kept!.state, managerId: kept!.managerId }).toEqual({ state: "TX", managerId: null });
+    // A save that keeps the pay facts needs none.
+    const titled = await call("put", `/employees/${pat.id}`, cookies.hr).send(
+      form({ name: "Pat Payroll", title: "Senior lead", payRate: "77.77" }),
+    );
+    status(titled, 200);
+    await harness.grantLastingStepUp(cookies.hr);
     const raised = await call("put", `/employees/${pat.id}`, cookies.hr).send(
       form({ name: "Pat Payroll", title: "Lead", payRate: "80.00" }),
     );
@@ -1854,6 +1882,8 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     );
     status(titled, 400);
     expect(titled.body.message).toContain(unlinked);
+    // A new rate needs a step-up (ADR 0063); here it is setup.
+    await harness.grantStepUp(owner);
     status(await raise(owner, "40.00"), 200);
     expect(await storedPay(pay.id)).toBe("40.00");
   });
@@ -1979,6 +2009,8 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
 
     // A linked editor and the Owner still may.
     status(await call("put", `/employees/${self.id}`, cookies.hr).send(selfForm({ state: "CO" })), 200);
+    // A new work state needs a step-up (ADR 0063); here it is setup.
+    await harness.grantStepUp(owner);
     status(await call("put", `/employees/${self.id}`, owner).send(selfForm({ state: "CA" })), 200);
     status(await tick(owner), 201);
     const [moved] = await rows((db) => db.select().from(employees).where(eq(employees.id, self.id)));
@@ -2002,6 +2034,8 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     expect(await linkedTo()).toBeNull();
     // Leaving the link out is no change, so the branch editor's other edits still pass.
     status(await put(editor.cookie, { title: "Lead" }), 200);
+    // A new sign-in link needs a step-up (ADR 0063); here it is setup.
+    await harness.grantStepUp(owner);
     status(await put(owner, { title: "Lead", userId: spare }), 200);
     expect(await linkedTo()).toBe(kit.id);
     // Re-sending the same link is no change either; removing it is.

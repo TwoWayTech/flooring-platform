@@ -23,6 +23,7 @@ import {
 } from "@workspace/ui/components/dropdown-menu";
 import { useNumberSettings } from "@workspace/ui/components/number-settings";
 import { ReasonDialog } from "@/components/reason-dialog";
+import { useStepUp } from "@/components/use-step-up";
 import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 import { CommissionSplitDialog } from "./commission-split-dialog";
@@ -57,6 +58,7 @@ export function UpdateStatusMenu({ invoice, ledger, credit, settings, onRecord }
   const can = useCan();
   const numbers = useNumberSettings();
   const [asking, setAsking] = useState<"write_off" | "void" | "credit_note" | "split" | null>(null);
+  const stepUp = useStepUp();
   const money = (v: string) => formatNumber(v, "money", numbers);
   const offered = invoiceActions(invoice, ledger, {
     customerCredit: credit,
@@ -121,12 +123,18 @@ export function UpdateStatusMenu({ invoice, ledger, credit, settings, onRecord }
           title={`Write off ${money(ledger.balance)}`}
           description="The leftover balance is closed and the invoice reads Paid, with a write-off line on the statement."
           confirmLabel="Write off"
-          onConfirm={(reason) =>
-            api.writeOffBalance(invoice.id, reason).then(() => toast.success(`${invoice.number} written off`))
+          onConfirm={async (reason) =>
+            // Writing off gives up money owed, so the API asks for a fresh code (ADR 0063).
+            stepUp.ask(`Writing off ${money(ledger.balance)} on ${invoice.number}`, () =>
+              api.writeOffBalance(invoice.id, reason).then(() => {
+                toast.success(`${invoice.number} written off`);
+              }),
+            )
           }
           onClose={() => setAsking(null)}
         />
       ) : null}
+      {stepUp.dialog}
       {asking === "credit_note" ? <CreditNoteDialog invoice={invoice} onClose={() => setAsking(null)} /> : null}
       {asking === "split" ? <CommissionSplitDialog invoice={invoice} onClose={() => setAsking(null)} /> : null}
       {asking === "void" ? (

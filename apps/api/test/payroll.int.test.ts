@@ -40,6 +40,9 @@ function week(weeksAgo: number): string {
   return addDays(workweekStartOf(companyDay(), 1), -7 * weeksAgo);
 }
 
+/** The two payroll routes that need a step-up (ADR 0063). */
+const PAY_DECISION = /^\/pay-periods\/[^/]+\/(approve|reopen)$/;
+
 interface TrialBalance {
   balanced: boolean;
   rows: { key: string | null; balance: string }[];
@@ -204,8 +207,14 @@ describe("payroll API (needs the local PostgreSQL)", () => {
     status(await call("post", "/timesheets/decisions", cookies.owner).send({ action: "approve", ids: sheetIds }), 201);
   }
 
-  const post = (path: string, cookie: string, body: Record<string, unknown> = {}) =>
-    call("post", path, cookie).send(body);
+  /**
+   * A POST. Approving or reopening a pay period needs a step-up (ADR 0063), so those get one first;
+   * the step-up test below checks the refusal without one.
+   */
+  const post = async (path: string, cookie: string, body: Record<string, unknown> = {}) => {
+    if (PAY_DECISION.test(path)) await harness.grantStepUp(cookie);
+    return call("post", path, cookie).send(body);
+  };
 
   /** Every gross pay of a run's lines, added as decimals. */
   function grossOf(lines: readonly LineBody[]): string {
@@ -332,6 +341,8 @@ describe("payroll API (needs the local PostgreSQL)", () => {
     cookies.sales = await harness.signIn(emails.sales);
     cookies.wes = await harness.signIn(emails.wes);
     cookies.owner = await enrolled(await harness.addUser({ companyIds: [company.id], roles: ["owner"] }));
+    // Ivy's (hr4) pay edits change pay facts, which need a step-up (ADR 0063); setup here.
+    await harness.grantLastingStepUp(cookies.hr4);
     await harness.grantStepUp(cookies.accountant);
     const saved = await call("put", "/settings/accounting", cookies.accountant)
       .send({
@@ -582,6 +593,13 @@ describe("payroll API (needs the local PostgreSQL)", () => {
     expect(asked.body.message).toContain("approved pay period");
 
     const approvedBalance = await balances();
+    // Reopening takes back everyone's pay, so without a fresh step-up it is refused and nothing
+    // moves (ADR 0063); with one it goes through.
+    await harness.dropStepUp(cookies.hr2);
+    const unconfirmed = await call("post", `/pay-periods/${period!.id}/reopen`, cookies.hr2).send({});
+    expect([unconfirmed.status, unconfirmed.body.code]).toEqual([403, "step_up_required"]);
+    expect((await review(cookies.owner, period!.id)).period.status).toBe("approved");
+    expect(await balances()).toEqual(approvedBalance);
     const reopened = await post(`/pay-periods/${period!.id}/reopen`, cookies.hr2);
     status(reopened, 201);
     expect(reopened.body).toMatchObject({ status: "in_review", lines: [], approvedBy: null });
@@ -597,6 +615,13 @@ describe("payroll API (needs the local PostgreSQL)", () => {
     expect(await auditOf("Reopened pay period", period!.id)).toHaveLength(1);
     // Open to hours again; and approving once more posts a new entry.
     status(await post(`/pay-periods/${period!.id}/reopen`, cookies.hr2), 400);
+    // Approving commits everyone's pay: refused without a fresh step-up, still in review (ADR 0063).
+    await harness.dropStepUp(cookies.hr2);
+    const approvals = (await auditOf("Approved pay period", period!.id)).length;
+    const unapproved = await call("post", `/pay-periods/${period!.id}/approve`, cookies.hr2).send({});
+    expect([unapproved.status, unapproved.body.code]).toEqual([403, "step_up_required"]);
+    expect((await review(cookies.owner, period!.id)).period.status).toBe("in_review");
+    expect(await auditOf("Approved pay period", period!.id)).toHaveLength(approvals);
     const again = await post(`/pay-periods/${period!.id}/approve`, cookies.hr2);
     status(again, 201);
     const final = await balances();

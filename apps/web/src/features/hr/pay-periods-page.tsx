@@ -33,6 +33,7 @@ import { NoAccess } from "@/components/no-access";
 import { NotShown } from "@/components/not-shown";
 import { QueryFallback } from "@/components/query-fallback";
 import { ReasonDialog } from "@/components/reason-dialog";
+import { StepUpDialog } from "@/components/step-up-dialog";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { writeTableFile } from "@/features/import/import-files";
 import { api } from "@/lib/api";
@@ -55,14 +56,38 @@ async function exportCsv(table: string[][], name: string) {
   saveBlob(await writeTableFile(table, "csv", "Pay period"), name);
 }
 
+/** What approving or reopening a run does, for its button, the step-up dialog and the toast. */
+const DECISIONS = {
+  approve: {
+    act: (id: string) => api.approvePayPeriod(id),
+    action: "Approving this pay period",
+    done: "Pay period approved",
+  },
+  reopen: { act: (id: string) => api.reopenPayPeriod(id), action: "Reopening this pay period", done: "Back in review" },
+} as const;
+type Decision = keyof typeof DECISIONS;
+
 /**
  * One pay period's review (spec C1): blockers, actions and the lines table. A line's salary the
  * viewer may not see arrives stripped and shows as "Not shown" (CLAUDE.md rule 5; click-through #26).
+ * Approve and Reopen ask for a fresh code (ADR 0063).
  */
-export function ReviewBody({ review, period }: { review: PayPeriodReview; period: PayPeriod }) {
+export function ReviewBody({
+  review,
+  period,
+  onKeep = () => {},
+}: {
+  review: PayPeriodReview;
+  period: PayPeriod;
+  /** Keeps this period chosen after it is approved or reopened, so Export for payroll is right there (#47). */
+  onKeep?: (id: string) => void;
+}) {
   const can = useCan();
   const formatDate = useFormatDate();
   const [excluding, setExcluding] = useState<PayReviewRow | null>(null);
+  const [stepUp, setStepUp] = useState(false);
+  // The decision waiting for the step-up; kept while the dialog closes, so its words stay.
+  const [decision, setDecision] = useState<Decision>("approve");
   const canApprove = can("hr.payroll.approve");
   const locked = period.status === "approved" || period.status === "exported";
   const included = review.rows.filter((r) => !r.excludedReason);
@@ -76,6 +101,26 @@ export function ReviewBody({ review, period }: { review: PayPeriodReview; period
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "That did not work.");
     }
+  }
+
+  /**
+   * Approving or reopening commits or takes back everyone's pay, so the API asks for a fresh code
+   * (ADR 0063). A run that still has timesheets waiting is refused before the code, on the API too,
+   * so it is sent straight away and its refusal shown, never costing a code.
+   */
+  function decide(next: Decision) {
+    onKeep(period.id);
+    if (next === "approve" && review.blockers.length > 0) {
+      void run(() => DECISIONS.approve.act(period.id), DECISIONS.approve.done);
+      return;
+    }
+    setDecision(next);
+    setStepUp(true);
+  }
+
+  async function confirmed() {
+    await run(() => DECISIONS[decision].act(period.id), DECISIONS[decision].done);
+    setStepUp(false);
   }
 
   async function exportPeriod() {
@@ -205,13 +250,13 @@ export function ReviewBody({ review, period }: { review: PayPeriodReview; period
       ) : null}
       <div className="flex flex-wrap gap-2">
         {canApprove && !locked ? (
-          <Button onClick={() => void run(() => api.approvePayPeriod(period.id), "Pay period approved")}>
+          <Button onClick={() => decide("approve")}>
             <CircleCheck />
             Approve pay period
           </Button>
         ) : null}
         {canApprove && period.status === "approved" ? (
-          <Button variant="outline" onClick={() => void run(() => api.reopenPayPeriod(period.id), "Back in review")}>
+          <Button variant="outline" onClick={() => decide("reopen")}>
             <RotateCcw />
             Reopen
           </Button>
@@ -260,6 +305,7 @@ export function ReviewBody({ review, period }: { review: PayPeriodReview; period
           onClose={() => setExcluding(null)}
         />
       ) : null}
+      <StepUpDialog open={stepUp} action={DECISIONS[decision].action} onOpenChange={setStepUp} onConfirm={confirmed} />
     </div>
   );
 }
@@ -341,7 +387,7 @@ export function PayPeriodsPage() {
               <StatusPill {...STATUS[review.data.period.status]} />
               <span className="text-muted-foreground text-sm">Pay date {formatDate(review.data.period.payDate)}</span>
             </div>
-            <ReviewBody review={review.data} period={review.data.period} />
+            <ReviewBody review={review.data} period={review.data.period} onKeep={setChosen} />
           </TabsContent>
           <TabsContent value="contractors">
             <Contractors

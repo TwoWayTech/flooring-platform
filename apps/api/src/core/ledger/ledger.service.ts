@@ -260,11 +260,19 @@ export class LedgerService {
   /**
    * Closes the books through a day (or reopens to an earlier one); the newest close decides. It
    * waits for postings in flight, which hold the period lock shared, so none slips in behind it.
-   * Returns the day that was closed before, read under the lock.
+   * Returns the day that was closed before, read under the lock. `confirm`, when given, is judged
+   * against that day under the lock before anything is written (a reopen's step-up, ADR 0063).
    */
-  async closePeriod(tx: CompanyDb, through: string, note: string, by: string): Promise<string | null> {
+  async closePeriod(
+    tx: CompanyDb,
+    through: string,
+    note: string,
+    by: string,
+    confirm?: (before: string | null) => Promise<void>,
+  ): Promise<string | null> {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext('ledger:period'))`);
     const before = await this.closedThrough(tx);
+    if (confirm) await confirm(before);
     await tx.insert(periodCloses).values({ id: uuidv7(), closedThrough: through, note, createdBy: by });
     return before;
   }
