@@ -15,24 +15,30 @@ function Row({
 }: {
   label: string;
   kind: "money" | "quantity";
-  value: string;
+  /** Absent when the server stripped it (a reserved pay-rate name, CLAUDE.md rule 5): shown as a dash. */
+  value: string | undefined;
   unit?: string;
 }) {
   return (
     <div className="flex justify-between gap-3">
       <dt className="text-muted-foreground">{label}</dt>
       <dd>
-        <Num kind={kind} value={value} unit={unit} />
+        {value === undefined ? (
+          <span className="text-muted-foreground" aria-label="Not shown">
+            —
+          </span>
+        ) : (
+          <Num kind={kind} value={value} unit={unit} />
+        )}
       </dd>
     </div>
   );
 }
 
-function PeriodCard({ row, showCommission }: { row: MyPayRow; showCommission: boolean }) {
+function PeriodCard({ row, showCommission, salaried }: { row: MyPayRow; showCommission: boolean; salaried: boolean }) {
   const formatDate = useFormatDate();
   const { line, period } = row;
   const bonus = bonusPay(line);
-  const salaried = dec(line.salaryAmount).gt(0);
   return (
     <Panel title={`${formatDate(period.start)} to ${formatDate(period.end)}`}>
       <dl className="flex flex-col gap-1.5 text-sm">
@@ -68,7 +74,13 @@ function PeriodCard({ row, showCommission }: { row: MyPayRow; showCommission: bo
   );
 }
 
-function Pay({ portal }: { portal: MyPortal }) {
+/**
+ * My pay's content from the portal answer (spec C2). Whether a line is salaried comes from the
+ * person's own pay type, because the API strips the line's `salaryAmount` from anyone without
+ * hr.employee.view_sensitive (finding #26: reading it crashed the page for every Employee and Manager).
+ */
+export function MyPayView({ portal }: { portal: MyPortal }) {
+  const salariedType = portal.employee?.payType === "salary";
   return (
     <div className="flex flex-col gap-4">
       <p className="text-muted-foreground text-sm">{GROSS_PAY_LABEL}</p>
@@ -81,7 +93,12 @@ function Pay({ portal }: { portal: MyPortal }) {
         <p className="text-muted-foreground text-sm">No pay periods have been approved yet.</p>
       ) : null}
       {portal.pay.map((row) => (
-        <PeriodCard key={row.period.id} row={row} showCommission={portal.visible.commission} />
+        <PeriodCard
+          key={row.period.id}
+          row={row}
+          showCommission={portal.visible.commission}
+          salaried={salariedType || dec(row.line.salaryAmount ?? "0").gt(0)}
+        />
       ))}
     </div>
   );
@@ -93,7 +110,7 @@ export function MyPayPage() {
     <MyShell title="My pay">
       {(p) =>
         p.visible.pay ? (
-          <Pay portal={p} />
+          <MyPayView portal={p} />
         ) : (
           <p className="text-muted-foreground">Your company does not show pay here.</p>
         )

@@ -278,10 +278,20 @@ export interface MyVisibility {
   clock: boolean;
 }
 
+/**
+ * One's own pay line as My pay receives it. The API strips the reserved pay-rate names (`baseRate`,
+ * `salaryAmount`, a week's `regularRate`) from anyone without hr.employee.view_sensitive, which the
+ * Employee and Manager roles lack, so the screen must not rely on them (CLAUDE.md rule 5; ADR 0049).
+ */
+export type MyPayLine = Omit<PayPeriodLine, "baseRate" | "salaryAmount" | "weeks"> &
+  Partial<Pick<PayPeriodLine, "baseRate" | "salaryAmount">> & {
+    weeks: (Omit<PayPeriodLine["weeks"][number], "regularRate"> & { regularRate?: string })[];
+  };
+
 /** One pay period on My pay. */
 export interface MyPayRow {
   period: PayPeriod;
-  line: PayPeriodLine;
+  line: MyPayLine;
 }
 
 /** Everything the portal shows, for the signed-in person only (spec C2). */
