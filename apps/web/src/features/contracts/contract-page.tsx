@@ -11,6 +11,7 @@ import {
   insuranceStatus,
   moneyString,
   pastEndDate,
+  signatureWarning,
   sum,
   type ChangeOrder,
   type ContractBilling,
@@ -30,7 +31,9 @@ import { FileViewerDialog } from "@/features/invoices/payments/file-viewer-dialo
 import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
+import { billingTaxNote } from "./billing-tax-note";
 import {
+  ApproveChangeOrderDialog,
   BillingDialog,
   ChangeOrderDialog,
   InsuranceDialog,
@@ -40,6 +43,7 @@ import {
 } from "./contract-dialogs";
 import { ContractFormDialog } from "./contract-form-dialog";
 import { CONTRACT_STATUS } from "./contract-status";
+import { ScheduleOfValues } from "./schedule-of-values";
 
 type Dialog =
   "edit" | "sign" | "billing" | "release" | "change" | "waiver" | "insurance" | "terminate" | "close" | "void" | null;
@@ -59,6 +63,12 @@ function Empty({ children }: { children: ReactNode }) {
   return <p className="text-muted-foreground text-sm">{children}</p>;
 }
 
+/** "billing 1", "billings 1 and 2" or "billings 1, 2 and 3". */
+function billingNumbers(numbers: readonly number[]): string {
+  if (numbers.length === 1) return `billing ${numbers[0]}`;
+  return `billings ${numbers.slice(0, -1).join(", ")} and ${numbers.at(-1)}`;
+}
+
 const INSURANCE = {
   valid: { tone: "success", icon: Check, label: "Valid" },
   expiring: { tone: "warning", icon: X, label: "Expiring soon" },
@@ -72,6 +82,7 @@ export function ContractPage({ id }: { id: string }) {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [viewing, setViewing] = useState<FileMeta | null>(null);
   const [refusing, setRefusing] = useState<ChangeOrder | null>(null);
+  const [approving, setApproving] = useState<ChangeOrder | null>(null);
   const data = useApiQuery(
     async (client) => {
       // One source for the contract, its papers and the companies they name, so ids match (ADR 0044).
@@ -81,6 +92,7 @@ export function ContractPage({ id }: { id: string }) {
         client.list("payments"),
       ]);
       const { lines, billings, waivers, certificates, customers, suppliers, locations, bills, supplierPayments } = all;
+      const { schedule, supplierContacts } = all;
       const contract = all.contracts.find((c) => c.id === id);
       const orders = all.changeOrders;
       return {
@@ -97,6 +109,8 @@ export function ContractPage({ id }: { id: string }) {
         payments,
         bills,
         supplierPayments,
+        schedule,
+        supplierContacts,
       };
     },
     [id],
@@ -141,6 +155,24 @@ export function ContractPage({ id }: { id: string }) {
     }
     return d.bills.find((x) => x.id === b.billId)?.number ?? null;
   };
+  // Which billings a release paid out, and how much of each billing's retainage is released (rule 10a).
+  const retainageOf = (b: ContractBilling) => d.schedule.billings.find((r) => r.billingId === b.id);
+  const releasedOn = (b: ContractBilling) => retainageOf(b)?.released ?? b.released;
+  const billingLabel = (b: ContractBilling) => {
+    if (b.kind === "progress") return `Billing ${b.number}`;
+    const numbers = (retainageOf(b)?.paidFrom ?? []).flatMap(
+      (p) => billings.find((x) => x.id === p.billingId)?.number ?? [],
+    );
+    return numbers.length === 0 ? "Release" : `Release of retainage from ${billingNumbers(numbers)}`;
+  };
+  const customer = d.customers.find((c) => c.id === contract.customerId);
+  // The signer is a person: the customer's contact, else the supplier's primary contact, else nobody yet.
+  const signer = customer
+    ? customer.contactName === customer.name
+      ? ""
+      : customer.contactName
+    : (d.supplierContacts.find((c) => c.supplierId === contract.supplierId && c.isPrimary && c.status === "active")
+        ?.name ?? "");
 
   async function run(action: () => Promise<unknown>, done: string) {
     try {
@@ -245,44 +277,22 @@ export function ContractPage({ id }: { id: string }) {
       )}
       {contract.signature ? (
         <p className="text-muted-foreground text-sm">
-          Simulated signature: {contract.signature.signerName}, {contract.signature.signerRole},{" "}
-          {formatDate(contract.signature.signedAt, true)}. Recorded by {contract.signature.recordedBy}.
+          Typed signature: {contract.signature.signerName}, {contract.signature.signerRole},{" "}
+          {formatDate(contract.signature.signedAt, true)}. Recorded by {contract.signature.recordedBy}; a signing
+          provider is not connected yet.
         </p>
       ) : null}
       {project ? (
-        <Panel title="Schedule of values" bodyClassName="p-0">
-          <ScrollRegion label="Schedule of values">
-            <table className="w-full min-w-[34rem] text-sm">
-              <thead className="bg-raised text-muted-foreground text-left text-xs">
-                <tr>
-                  <th className="px-4 py-2 font-medium">Line</th>
-                  <th className="px-4 py-2 font-medium">Billing</th>
-                  <th className="px-4 py-2 text-right font-medium">Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lines.map((l) => (
-                  <tr key={l.id} className="border-hairline border-t">
-                    <td className="px-4 py-2">
-                      {l.code} {l.description}
-                    </td>
-                    <td className="px-4 py-2">
-                      {l.billing === "milestone"
-                        ? `Milestone${l.milestoneDueAt ? `, due ${formatDate(l.milestoneDueAt)}` : ""}`
-                        : "By progress"}
-                    </td>
-                    <td className="px-4 py-2 text-right">
-                      <Num kind="money" value={l.scheduledValue} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </ScrollRegion>
-        </Panel>
+        <ScheduleOfValues
+          lines={lines}
+          schedule={d.schedule.lines}
+          showBilling={can("contracts.billing.view")}
+          formatDate={formatDate}
+        />
       ) : null}
       {project ? (
         <Panel title="Billings" bodyClassName="p-0">
+          <p className="text-muted-foreground px-4 pt-3 text-sm">{billingTaxNote(contract, customer, today)}</p>
           {billings.length === 0 ? (
             <div className="p-4">
               <Empty>No billings yet.</Empty>
@@ -304,18 +314,18 @@ export function ContractPage({ id }: { id: string }) {
                   {billings.map((b) => (
                     <tr key={b.id} className="border-hairline border-t">
                       <td className="px-4 py-2">
-                        {b.kind === "release" ? "Release" : `Billing ${b.number}`}, {formatDate(b.periodEnd)}
+                        {billingLabel(b)}, {formatDate(b.periodEnd)}
                         {b.status === "void" ? ", void" : ""}
                       </td>
                       <td className="px-4 py-2">{docLink(b)}</td>
                       <td className="px-4 py-2 text-right">
-                        <Num kind="money" value={b.gross} />
+                        {b.kind === "release" ? null : <Num kind="money" value={b.gross} />}
                       </td>
                       <td className="px-4 py-2 text-right">
-                        <Num kind="money" value={b.withheld} />
+                        {b.kind === "release" ? null : <Num kind="money" value={b.withheld} />}
                       </td>
                       <td className="px-4 py-2 text-right">
-                        <Num kind="money" value={b.released} />
+                        <Num kind="money" value={releasedOn(b)} />
                       </td>
                       <td className="px-4 py-2 text-right">
                         {b.id === latest?.id && can("contracts.billing.void") ? (
@@ -348,16 +358,7 @@ export function ContractPage({ id }: { id: string }) {
                   </span>
                   {o.status === "pending" && can("contracts.change_order.approve") ? (
                     <span className="flex gap-1.5">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          void run(
-                            () => api.decideChangeOrder(o.id, { approve: true, reason: "" }),
-                            `${o.number} approved`,
-                          )
-                        }
-                      >
+                      <Button size="sm" variant="outline" onClick={() => setApproving(o)}>
                         Approve
                       </Button>
                       <Button size="sm" variant="ghost" onClick={() => setRefusing(o)}>
@@ -490,7 +491,9 @@ export function ContractPage({ id }: { id: string }) {
       {dialog === "sign" ? (
         <SignDialog
           contract={contract}
-          signer={party && "contactName" in party ? party.contactName : (party?.name ?? "")}
+          signer={signer}
+          // Certificates are read with compliance.view; without it the page cannot tell, so it does not warn.
+          warning={can("contracts.compliance.view") ? signatureWarning(contract, certificate) : null}
           onClose={() => setDialog(null)}
         />
       ) : null}
@@ -528,6 +531,9 @@ export function ContractPage({ id }: { id: string }) {
           onConfirm={(reason) => api.voidBilling(latest.id, reason)}
           onClose={() => setDialog(null)}
         />
+      ) : null}
+      {approving ? (
+        <ApproveChangeOrderDialog order={approving} value={figures.value} onClose={() => setApproving(null)} />
       ) : null}
       {refusing ? (
         <ReasonDialog

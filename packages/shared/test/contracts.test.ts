@@ -16,6 +16,8 @@ import {
   insuranceStatus,
   moneyString,
   retainageWarning,
+  signatureWarning,
+  TYPED_SIGNATURE_NOTE,
   waiverProblem,
   type BillingLine,
   type ChangeOrder,
@@ -271,5 +273,20 @@ describe("contract rules (spec D2, ADR 0026)", () => {
         }
       }
     });
+  });
+});
+
+describe("signing a subcontract with no insurance on file (owner 2026-11-21, click-through #35)", () => {
+  const cert = { coverages: [] } as unknown as InsuranceCertificate;
+
+  it("warns on a subcontract with no certificate, and never on a customer contract or with one", () => {
+    expect(signatureWarning({ direction: "subcontractor" }, null)).toBe("No insurance certificate on file");
+    expect(signatureWarning({ direction: "subcontractor" }, cert)).toBeNull();
+    expect(signatureWarning({ direction: "customer" }, null)).toBeNull();
+  });
+
+  it("says the signature is typed, with nothing about a demo", () => {
+    expect(TYPED_SIGNATURE_NOTE).toBe("Recorded as a typed signature; a signing provider is not connected yet.");
+    expect(TYPED_SIGNATURE_NOTE).not.toMatch(/demo/i);
   });
 });

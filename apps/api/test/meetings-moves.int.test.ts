@@ -998,6 +998,30 @@ describe("meeting moves, undo and proposals (needs the local PostgreSQL)", () =>
     );
   });
 
+  it("audits a change of length alone as 'Changed meeting length', a new start as 'Moved meeting', and undoes either", async () => {
+    const made = await schedule(cookies.manager, { title: "Length check", recurrence: "weekly", durationMin: 30 });
+    const planned = at("11-17");
+    // The same start with a new length is a resize (click-through #44), decided from the stored meeting.
+    const resized = await moved(cookies.manager, made, { planned, start: planned, durationMin: 90 });
+    const actions = async () => (await entriesOf(made.id)).map((row) => row.action);
+    expect(await actions()).toContain("Changed meeting length");
+    expect(await actions()).not.toContain("Moved meeting");
+    const [lengthEntry] = (await entriesOf(made.id)).filter((row) => row.action === "Changed meeting length");
+    expect(lengthEntry!.after).toMatchObject({ start: planned, durationMin: 90, scope: "this" });
+    status(await undo(cookies.manager, made.id, resized.undo.previous.sequence), 201);
+    expect((await storedMeeting(made.id)).exceptions).toEqual([]);
+
+    // A new start keeping the length is a move, also on an occurrence whose length was changed on its own.
+    const next = at("11-24");
+    const longer = await moved(cookies.manager, made, { planned: next, start: next, durationMin: 45 });
+    const later = await moved(cookies.manager, made, { planned: next, start: at("11-24", "10:00"), durationMin: 45 });
+    expect(later.undo.previous.sequence).toBe(longer.undo.previous.sequence + 1);
+    const last = (await entriesOf(made.id)).map((row) => row.action);
+    expect(last.filter((action) => action === "Moved meeting")).toHaveLength(1);
+    expect(last.filter((action) => action === "Changed meeting length")).toHaveLength(2);
+    status(await undo(cookies.manager, made.id, later.undo.previous.sequence), 201);
+  });
+
   it("undoes only the last move: an older toast is refused, the newest answers, and the undo itself can't be undone", async () => {
     const made = await schedule(cookies.manager, { title: "Two moves", guests: [staff(ids.employee)] });
     const first = await moved(cookies.manager, made, {

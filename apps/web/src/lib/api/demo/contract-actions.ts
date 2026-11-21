@@ -15,6 +15,7 @@ import {
   moneyString,
   nextNumber,
   sum,
+  TYPED_SIGNATURE_NOTE,
   waiverProblem,
   type ChangeOrder,
   type Contract,
@@ -161,7 +162,7 @@ export async function signContract(ctx: ActionContext, id: string, input: Signat
       `Date: ${ctx.today}`,
     ],
     "Signed contract",
-    "Simulated signature for the demo. Not a legal signature.",
+    TYPED_SIGNATURE_NOTE,
   );
   const file = new File([pdf], `Signed ${contract.number}.pdf`, { type: "application/pdf" });
   const metas = await describeFiles(ctx, contract.id, [file], 0);

@@ -186,6 +186,16 @@ export interface PayWeek {
   straddlesPeriod: boolean;
 }
 
+/**
+ * A pay line as an answer may carry it to a screen. The API strips the reserved pay-rate names
+ * (`baseRate`, `salaryAmount`, a week's `regularRate`) from anyone without hr.employee.view_sensitive
+ * (CLAUDE.md rule 5; SENSITIVE_FIELDS), so a screen must not count on them (click-through #26).
+ */
+export type ViewedPayLine = Omit<PayPeriodLine, "baseRate" | "salaryAmount" | "weeks"> &
+  Partial<Pick<PayPeriodLine, "baseRate" | "salaryAmount">> & {
+    weeks: (Omit<PayWeek, "regularRate"> & { regularRate?: string })[];
+  };
+
 /** An amount paid to a 1099 contractor; never in a pay period (ADR 0024). */
 export interface ContractorPayment {
   id: string;

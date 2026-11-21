@@ -30,6 +30,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@workspace/ui/componen
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
 import { NoAccess } from "@/components/no-access";
+import { NotShown } from "@/components/not-shown";
 import { QueryFallback } from "@/components/query-fallback";
 import { ReasonDialog } from "@/components/reason-dialog";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
@@ -54,13 +55,19 @@ async function exportCsv(table: string[][], name: string) {
   saveBlob(await writeTableFile(table, "csv", "Pay period"), name);
 }
 
-function ReviewBody({ review, period }: { review: PayPeriodReview; period: PayPeriod }) {
+/**
+ * One pay period's review (spec C1): blockers, actions and the lines table. A line's salary the
+ * viewer may not see arrives stripped and shows as "Not shown" (CLAUDE.md rule 5; click-through #26).
+ */
+export function ReviewBody({ review, period }: { review: PayPeriodReview; period: PayPeriod }) {
   const can = useCan();
   const formatDate = useFormatDate();
   const [excluding, setExcluding] = useState<PayReviewRow | null>(null);
   const canApprove = can("hr.payroll.approve");
   const locked = period.status === "approved" || period.status === "exported";
   const included = review.rows.filter((r) => !r.excludedReason);
+  // Without hr.employee.view_sensitive the API strips each line's salary (click-through #26).
+  const salaryShown = review.rows.every((r) => r.line.salaryAmount !== undefined);
 
   async function run(action: () => Promise<unknown>, done: string) {
     try {
@@ -95,7 +102,20 @@ function ReviewBody({ review, period }: { review: PayPeriodReview; period: PayPe
     { id: "hours", header: "Hours", kind: "quantity", value: (r) => r.line.hoursWorked },
     { id: "ot", header: "Overtime", kind: "quantity", value: (r) => r.line.overtimeHours, hidden: true },
     { id: "straight", header: "Hours pay", kind: "money", value: (r) => r.line.straightTimePay, total: true },
-    { id: "salary", header: "Salary", kind: "money", value: (r) => r.line.salaryAmount, total: true },
+    {
+      id: "salary",
+      header: "Salary",
+      kind: "money",
+      value: (r) => r.line.salaryAmount ?? null,
+      // No partial or zero total when a salary is not shown (CLAUDE.md rule 5).
+      total: salaryShown,
+      cell: (r, { delta }) =>
+        r.line.salaryAmount === undefined ? (
+          <NotShown />
+        ) : (
+          <Num kind="money" value={r.line.salaryAmount} delta={delta} />
+        ),
+    },
     { id: "premium", header: "Overtime pay", kind: "money", value: (r) => r.line.overtimePremium, total: true },
     { id: "leave", header: "Paid leave", kind: "money", value: (r) => r.line.paidLeavePay, total: true },
     { id: "commission", header: "Commission", kind: "money", value: (r) => r.line.commissionPay, total: true },

@@ -6,13 +6,18 @@ import {
   UNDO_WINDOW_MINUTES,
   conflictForViewer,
   effectiveScope,
+  isMoveAuditAction,
   isPlannedOccurrence,
+  MEETING_AUDIT_ACTIONS,
   meetingOccurrences,
+  moveAuditAction,
   moveAuditEntry,
+  moveKind,
   moveProblem,
   movedMeetings,
   movedOccurrenceKey,
   occurrenceConflicts,
+  occurrenceTime,
   previousPlannedStart,
   restoredOccurrence,
   undoProblem,
@@ -602,5 +607,36 @@ describe("undo, rebuilt from the move's own audit entry (critic B3)", () => {
       start: "2026-12-10T08:30",
       durationMin: 60,
     });
+  });
+});
+
+describe("move or resize (click-through #44)", () => {
+  const series = huddle({
+    durationMin: 30,
+    exceptions: [{ planned: "2026-11-26T08:30", start: "2026-11-26T09:00", durationMin: 45 }],
+  });
+
+  it("reads an occurrence's own time and length, or the series' plan", () => {
+    expect(occurrenceTime(series, "2026-11-26T08:30")).toEqual({ start: "2026-11-26T09:00", durationMin: 45 });
+    expect(occurrenceTime(series, "2026-12-03T08:30")).toEqual({ start: "2026-12-03T08:30", durationMin: 30 });
+  });
+
+  it("calls a change that keeps the start a resize, and any new start a move", () => {
+    const from = { start: "2026-12-03T14:00", durationMin: 30 };
+    expect(moveKind(from, { start: "2026-12-03T14:00", durationMin: 90 })).toBe("resize");
+    expect(moveKind(from, { start: "2026-12-03T15:00", durationMin: 30 })).toBe("move");
+    expect(moveKind(from, { start: "2026-12-03T15:00", durationMin: 60 })).toBe("move");
+    // An occurrence moved on its own is judged from its own time, not the planned one.
+    const own = occurrenceTime(series, "2026-11-26T08:30");
+    expect(moveKind(own, { start: "2026-11-26T09:00", durationMin: 60 })).toBe("resize");
+    expect(moveKind(own, { start: "2026-11-26T08:30", durationMin: 45 })).toBe("move");
+  });
+
+  it("audits a resize as a length change, and undo reads both entries back", () => {
+    expect(moveAuditAction("move")).toBe("Moved meeting");
+    expect(moveAuditAction("resize")).toBe("Changed meeting length");
+    expect(isMoveAuditAction(MEETING_AUDIT_ACTIONS.moved)).toBe(true);
+    expect(isMoveAuditAction(MEETING_AUDIT_ACTIONS.resized)).toBe(true);
+    expect(isMoveAuditAction(MEETING_AUDIT_ACTIONS.undone)).toBe(false);
   });
 });

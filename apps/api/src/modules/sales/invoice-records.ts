@@ -110,6 +110,7 @@ export async function loadInvoices(db: CompanyDb, zone: string, filter: RecordFi
       issuedAt: dayIn(row.issuedAt, zone),
       dueAt: row.dueAt,
       createdBy: row.createdBy ?? "",
+      createdAt: instantOf(row.createdAt),
       sentAt: row.sentAt ? dayIn(row.sentAt, zone) : null,
       sentBy: row.sentBy,
       voidedAt: row.voidedAt ? dayIn(row.voidedAt, zone) : null,

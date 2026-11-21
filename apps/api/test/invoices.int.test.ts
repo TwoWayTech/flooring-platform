@@ -13,7 +13,18 @@ import {
   userProfiles,
 } from "@workspace/db/company";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
-import { addDays, CREDIT_NOTE_PREFIX, dec, FIRST_CREDIT_NOTE, nextNumber } from "@workspace/shared";
+import {
+  addDays,
+  CREDIT_NOTE_PREFIX,
+  customerStatement,
+  dec,
+  FIRST_CREDIT_NOTE,
+  nextNumber,
+  type Invoice,
+  type InvoiceAdjustment,
+  type Payment,
+  type Refund,
+} from "@workspace/shared";
 import { eq } from "drizzle-orm";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -656,6 +667,50 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     });
     expect(note.status, JSON.stringify(note.body)).toBe(201);
     expect(note.body.number).toBe(`${CREDIT_NOTE_PREFIX}${Number(taken.slice(CREDIT_NOTE_PREFIX.length)) + 1}`);
+  });
+
+  it("answers when each invoice was made, so a statement lists a credit note after an earlier payment (click-through #19)", async () => {
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Juniper Test" }).expect(201);
+    const { invoice } = await invoiced(cookies.salesA, customer.body.id);
+    const paid = await call("post", "/payments", cookies.owner)
+      .send(payment(invoice.id, { amount: "489.65", method: "cash", checkNumber: "", reference: "" }))
+      .expect(201);
+    await call("post", `/payments/${paid.body.id}/review`, cookies.accountant).send({ action: "confirm" }).expect(201);
+    const note = await call("post", `/invoices/${invoice.id}/credit-notes`, cookies.owner)
+      .send({ subtotal: "45.00", reason: "One carton returned" })
+      .expect(201);
+    // The note was issued an hour after the payment, on the same day: kind order alone would put it first.
+    const handle = await harness.companyDb(company.id);
+    try {
+      const [made] = await handle.db
+        .select({ createdAt: invoices.createdAt })
+        .from(invoices)
+        .where(eq(invoices.id, note.body.id));
+      await handle.db
+        .update(invoices)
+        .set({ createdAt: new Date(made!.createdAt.getTime() + 60 * 60_000) })
+        .where(eq(invoices.id, note.body.id));
+    } finally {
+      await handle.close();
+    }
+    const [all, payments, adjustments, refunds] = await Promise.all(
+      ["/invoices", "/payments", "/invoice-adjustments", "/refunds"].map(
+        async (path) => (await call("get", path, cookies.owner).expect(200)).body,
+      ),
+    );
+    const answered = (all as Invoice[]).find((i) => i.id === note.body.id)!;
+    expect(answered.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+    const lines = customerStatement(
+      {
+        invoices: all as Invoice[],
+        payments: payments as Payment[],
+        adjustments: adjustments as InvoiceAdjustment[],
+        refunds: refunds as Refund[],
+      },
+      customer.body.id,
+    );
+    expect(lines.map((l) => l.kind)).toEqual(["invoice", "payment", "credit"]);
+    expect(lines.at(-1)?.reference).toBe(note.body.number);
   });
 
   it("posts every event to a ledger that stays in balance, and refuses a closed period", async () => {

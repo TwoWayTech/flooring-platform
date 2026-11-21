@@ -92,10 +92,15 @@ function addressLines(a: Address): string[] {
   return [a.street, `${a.city}, ${a.state} ${a.zip}`.trim()].filter((l) => l.replace(/[ ,]/g, ""));
 }
 
-/** How tax was charged, as the invoice states it. */
+/**
+ * How tax was charged, as the invoice states it. A contract billing that charged no tax, though a
+ * rule applies, says so: the contractor pays the tax, or a release was taxed when billed
+ * (contracts.md rule 13). Wording only; the tax rules themselves are unchanged (ADR 0061, 10).
+ */
 function taxLabel(invoice: Invoice, fmt: DocFormat): string {
   if (invoice.taxExempt) return "Sales tax, exempt (resale certificate on file)";
   if (!invoice.taxRule) return `Sales tax, not collected in ${stateName(invoice.jobSite.state)}`;
+  if (invoice.contractId && dec(invoice.tax).isZero()) return "Sales tax, not charged (contract billing)";
   return `Sales tax, ${invoice.taxRule.jurisdiction} ${fmt(invoice.taxRule.ratePct, "taxRate")}`;
 }
 

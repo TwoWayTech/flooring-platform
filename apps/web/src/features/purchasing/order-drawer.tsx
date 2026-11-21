@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Ban, PackageCheck, ReceiptText, Send, FileDown } from "lucide-react";
 import { toast } from "sonner";
 import {
+  damagedByLine,
+  damagedLines,
   dec,
   locationName,
   poState,
@@ -25,13 +27,28 @@ import { Num } from "@workspace/ui/components/num";
 import { CartonHint } from "@/components/quantity/carton-hint";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@workspace/ui/components/sheet";
 import { ReasonDialog } from "@/components/reason-dialog";
+import { ScrollRegion } from "@/components/scroll-region";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { saveBlob } from "@/lib/save-blob";
 import { api } from "@/lib/api";
 import { useFormatDate } from "@/lib/use-format-date";
 import { BillDialog } from "./bill-dialog";
 import { PoStatusPill } from "./po-status";
+import { DamagedLines, DamagedQuantity } from "./damaged-quantity";
 import { ReceiptDialog } from "./receipt-dialog";
+
+/**
+ * A quantity with its unit in a narrow column: the number never breaks, and the unit drops to the
+ * next line before it would run into the column beside it (click-through #23).
+ */
+function QuantityCell({ value, unit }: { value: string; unit: string }) {
+  return (
+    <>
+      <Num kind="quantity" value={value} className="whitespace-nowrap" />{" "}
+      <span className="whitespace-nowrap">{unit}</span>
+    </>
+  );
+}
 
 /**
  * A purchase order and its next steps (spec D1, D2): Order a draft, Cancel before anything arrives,
@@ -69,6 +86,7 @@ export function OrderDrawer({
   const today = api.today();
   const state = poState(po, receipts, bills, payments, today);
   const got = receivedByLine(po.id, receipts);
+  const damaged = damagedByLine(po.id, receipts);
   const own = receipts.filter((r) => r.poId === po.id);
   const toBill = unbilledReceipts(po, receipts, bills);
   const open = po.lines.some((l) => (got.get(l.id) ?? dec(0)).lt(l.quantity));
@@ -136,48 +154,56 @@ export function OrderDrawer({
             ) : null}
           </div>
         </SheetHeader>
-        <div className="overflow-x-auto px-4">
-          <table className="w-full min-w-[28rem] text-sm">
+        <ScrollRegion label="Order lines" className="px-4">
+          <table className="w-full text-sm">
             <thead className="text-muted-foreground border-hairline border-b text-xs">
               <tr>
                 <th scope="col" className="py-1.5 text-left font-medium">
                   Item
                 </th>
-                <th scope="col" className="py-1.5 text-right font-medium">
+                <th scope="col" className="py-1.5 pl-4 text-right font-medium">
                   Ordered
                 </th>
-                <th scope="col" className="py-1.5 text-right font-medium">
+                <th scope="col" className="py-1.5 pl-4 text-right font-medium">
                   Received
                 </th>
                 {showCost ? (
-                  <th scope="col" className="py-1.5 text-right font-medium">
+                  <th scope="col" className="py-1.5 pl-4 text-right font-medium">
                     Cost
                   </th>
                 ) : null}
               </tr>
             </thead>
             <tbody>
-              {po.lines.map((l) => (
-                <tr key={l.id} className="border-hairline border-b align-top">
-                  <td className="py-1.5 pr-3">
-                    <span className="line-clamp-2 break-words" title={l.description}>
-                      {l.description}
-                    </span>
-                    <CartonHint quantity={l.quantity} sqFtPerCarton={l.sqFtPerCarton} className="block" />
-                  </td>
-                  <td className="py-1.5 text-right whitespace-nowrap">
-                    <Num kind="quantity" value={l.quantity} unit={UNIT_LABELS[l.unit]} />
-                  </td>
-                  <td className="py-1.5 text-right whitespace-nowrap">
-                    <Num kind="quantity" value={(got.get(l.id) ?? dec(0)).toString()} unit={UNIT_LABELS[l.unit]} />
-                  </td>
-                  {showCost ? (
-                    <td className="py-1.5 text-right">
-                      <Num kind="unitCost" value={l.unitCost} />
+              {po.lines.map((l) => {
+                const lost = damaged.get(l.id);
+                return (
+                  <tr key={l.id} className="border-hairline border-b align-top">
+                    <td className="py-1.5">
+                      <span className="line-clamp-2 break-words" title={l.description}>
+                        {l.description}
+                      </span>
+                      <CartonHint quantity={l.quantity} sqFtPerCarton={l.sqFtPerCarton} className="block" />
                     </td>
-                  ) : null}
-                </tr>
-              ))}
+                    <td className="py-1.5 pl-4 text-right">
+                      <QuantityCell value={l.quantity} unit={UNIT_LABELS[l.unit]} />
+                    </td>
+                    <td className="py-1.5 pl-4 text-right">
+                      <QuantityCell value={(got.get(l.id) ?? dec(0)).toString()} unit={UNIT_LABELS[l.unit]} />
+                      {lost ? (
+                        <span className="text-warning-ink block text-xs">
+                          <DamagedQuantity quantity={lost.toString()} unit={l.unit} sqFtPerCarton={l.sqFtPerCarton} />
+                        </span>
+                      ) : null}
+                    </td>
+                    {showCost ? (
+                      <td className="py-1.5 pl-4 text-right whitespace-nowrap">
+                        <Num kind="unitCost" value={l.unitCost} />
+                      </td>
+                    ) : null}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           {showCost ? (
@@ -185,7 +211,7 @@ export function OrderDrawer({
               Total <Num kind="money" value={po.total} />
             </p>
           ) : null}
-        </div>
+        </ScrollRegion>
         {orderBills.length > 0 ? (
           <section className="px-4 text-sm" aria-label="Bills">
             <h3 className="mb-1 font-semibold">Bills</h3>
@@ -213,6 +239,8 @@ export function OrderDrawer({
                 <li key={r.id}>
                   {r.number}, {formatDate(r.receivedAt)}, {r.receivedBy}, into {locationName(locations, r.locationId)}
                   {toBill.includes(r) ? <span className="text-warning-ink"> (not billed yet)</span> : null}
+                  <DamagedLines lines={damagedLines(po, [r])} className="text-warning-ink text-xs" />
+                  {r.note ? <span className="text-muted-foreground block text-xs">Note: {r.note}</span> : null}
                 </li>
               ))}
             </ul>

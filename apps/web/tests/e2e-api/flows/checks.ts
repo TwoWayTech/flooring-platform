@@ -11,7 +11,7 @@ import {
   type OutboxStatus,
   type Payment,
   type PayPeriod,
-  type PayPeriodLine,
+  type ViewedPayLine,
   type TimesheetWire,
 } from "@workspace/shared";
 import type { MyPortal, PayPeriodReview } from "@/lib/api/contract";
@@ -186,7 +186,7 @@ export async function openPayLine(
   page: Page,
   day: string,
   name: string,
-): Promise<{ period: PayPeriod; line: PayPeriodLine }> {
+): Promise<{ period: PayPeriod; line: ViewedPayLine }> {
   const review = await openPayPeriodReview(page, day);
   if (!review) throw new Error(`No pay period holds ${day}.`);
   const row = review.rows.find((r) => r.employee.name === name);
@@ -204,9 +204,11 @@ export async function openPayLine(
  * `hr.employee.view_sensitive` (CLAUDE.md rule 5), so only a reader who holds it (Tamara) can check
  * the pay this way.
  */
-export function payAtBaseRate(line: PayPeriodLine, hours: "hoursWorked" | "paidLeaveHours"): Dec {
-  expect(line.baseRate, "the pay line carries its base rate (hr.employee.view_sensitive)").toBeDefined();
-  return roundMoney(dec(line[hours]).times(line.baseRate));
+export function payAtBaseRate(line: ViewedPayLine, hours: "hoursWorked" | "paidLeaveHours"): Dec {
+  const rate = line.baseRate;
+  if (rate === undefined)
+    throw new Error("The pay line carries no base rate: read it as someone with hr.employee.view_sensitive.");
+  return roundMoney(dec(line[hours]).times(rate));
 }
 
 /** Asserts the open pay period's row for `name` shows, under each column header in `cells`, its text. */

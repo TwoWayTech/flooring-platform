@@ -179,7 +179,8 @@ test.describe("Meeting guests and invites (spec E)", () => {
     await signInAs(page, BRI, "/my/meetings");
     const item = page.getByRole("listitem").filter({ hasText: "Install walkthrough: Mazie Kutch" });
     await expect(item).toBeVisible();
-    await expect(item).toContainText(/ at \d{2}:\d{2}$/);
+    // A meeting time is 12-hour, as every time on screen (ADR 0064).
+    await expect(item).toContainText(/ at \d{1,2}:\d{2} (AM|PM)$/);
     await expect(page.getByRole("button", { name: "Request a meeting" })).toBeVisible();
   });
 
