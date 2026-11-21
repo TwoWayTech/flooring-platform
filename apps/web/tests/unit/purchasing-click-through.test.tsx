@@ -4,7 +4,7 @@ import { AreaQuantityInput } from "@/components/quantity/area-quantity-input";
 import { startsAtTop } from "@/components/shell/scroll-to-top";
 import { DamagedLines, DamagedQuantity } from "@/features/purchasing/damaged-quantity";
 import { OWED_ON_BILLS, PO_NOT_PAID_HEADER, PO_NOT_PAID_NOTE } from "@/features/purchasing/owed-labels";
-import { payAnywayWarning } from "@/features/purchasing/supplier-payment-sheet";
+import { payAnywayConfirmed, payAnywayWarning } from "@/features/purchasing/supplier-payment-sheet";
 
 /** The markup's text as it reads on screen: tags out, spaces folded, none before punctuation. */
 const text = (html: string) =>
@@ -86,6 +86,18 @@ describe("paying a bill that differs from the goods received (click-through #25)
     expect(payAnywayWarning([{ number: "TV-1", matchIssues: [issue] }])).toBe(
       `Bill TV-1 differs from the goods received: ${issue} Pay anyway?`,
     );
+  });
+
+  it("holds a Pay anyway only for the warning it answered", () => {
+    const one = payAnywayWarning([{ number: "TV-1", matchIssues: [issue] }]);
+    const two = payAnywayWarning([
+      { number: "TV-1", matchIssues: [issue] },
+      { number: "TV-3", matchIssues: [issue] },
+    ]);
+    expect(payAnywayConfirmed(one, one)).toBe(true);
+    expect(payAnywayConfirmed(one, two)).toBe(false);
+    expect(payAnywayConfirmed(one, null)).toBe(false);
+    expect(payAnywayConfirmed(null, one)).toBe(false);
   });
 
   it("says nothing when every chosen bill matches", () => {

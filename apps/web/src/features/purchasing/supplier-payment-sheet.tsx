@@ -46,6 +46,15 @@ export function payAnywayWarning(bills: readonly Pick<Bill, "number" | "matchIss
 }
 
 /**
+ * Whether "Pay anyway" still holds: it answers one warning, so a different warning (or none)
+ * clears it. Changing the chosen bills also clears it in the sheet, so any new choice of bills
+ * must be confirmed again.
+ */
+export function payAnywayConfirmed(confirmedFor: string | null, warning: string | null): boolean {
+  return warning !== null && confirmedFor === warning;
+}
+
+/**
  * Pay a supplier (spec D3, mirroring Appendix A): pick the open bills, the amount (partial is
  * fine; it goes to the oldest due first), method, reference and mandatory proof. With approval on,
  * a second person confirms it before the bills count as paid. A bill flagged as differing from
@@ -73,8 +82,9 @@ export function SupplierPaymentSheet({
   const [reference, setReference] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [pending, setPending] = useState(false);
-  const [payAnyway, setPayAnyway] = useState(false);
+  const [confirmedFor, setConfirmedFor] = useState<string | null>(null);
   const warning = payAnywayWarning(chosen);
+  const payAnyway = payAnywayConfirmed(confirmedFor, warning);
   const split = allocate(/^\d+(\.\d{1,2})?$/.test(amount) ? amount : "0", chosen);
 
   async function submit(event?: FormEvent) {
@@ -117,7 +127,10 @@ export function SupplierPaymentSheet({
                 <label key={b.id} className="flex items-center gap-2 text-sm">
                   <Checkbox
                     checked={picked.includes(b.id)}
-                    onCheckedChange={(v) => setPicked((p) => (v === true ? [...p, b.id] : p.filter((x) => x !== b.id)))}
+                    onCheckedChange={(v) => {
+                      setConfirmedFor(null);
+                      setPicked((p) => (v === true ? [...p, b.id] : p.filter((x) => x !== b.id)));
+                    }}
                   />
                   <span className="flex-1">
                     {b.number}, due {formatDate(b.dueAt)}
@@ -179,7 +192,7 @@ export function SupplierPaymentSheet({
               <div role="alert" className="bg-warning/12 flex flex-col gap-2 rounded-md px-3 py-2 text-sm">
                 <p className="text-warning-ink">{warning}</p>
                 <label className="flex items-center gap-2 font-medium">
-                  <Checkbox checked={payAnyway} onCheckedChange={(v) => setPayAnyway(v === true)} />
+                  <Checkbox checked={payAnyway} onCheckedChange={(v) => setConfirmedFor(v === true ? warning : null)} />
                   Pay anyway
                 </label>
               </div>

@@ -173,6 +173,11 @@ test.describe("purchasing at 1280 px (click-through #20 to #25)", () => {
     await expect(pay.getByRole("button", { name: "Save payment" })).toBeDisabled();
     await pay.getByRole("checkbox", { name: "Pay anyway" }).check();
     await expect(pay.getByRole("button", { name: "Save payment" })).toBeEnabled();
+    // Changing the bills chosen clears Pay anyway, so the new choice is confirmed again.
+    await pay.getByRole("checkbox", { name: /TV-E2E-FLAG/ }).uncheck();
+    await pay.getByRole("checkbox", { name: /TV-E2E-FLAG/ }).check();
+    await expect(pay.getByRole("checkbox", { name: "Pay anyway" })).not.toBeChecked();
+    await expect(pay.getByRole("button", { name: "Save payment" })).toBeDisabled();
   });
 });
 
