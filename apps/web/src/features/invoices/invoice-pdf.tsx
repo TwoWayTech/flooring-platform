@@ -1,9 +1,14 @@
 import { Document, Page, Text, View } from "@react-pdf/renderer";
 import type { InvoiceModel } from "./invoice-model";
 import { LINE, MUTED, Monogram, PAID, styles } from "./pdf-parts";
+import { pdfSafe } from "@/lib/pdf-text";
 
-/** The invoice as a PDF, generated in the browser from the same model the screen shows. */
-export function InvoicePdf({ model }: { model: InvoiceModel }) {
+/**
+ * The invoice as a PDF, generated in the browser from the same model the screen shows. Its text
+ * goes through `pdfSafe`, because the PDF font lacks signs such as "≈" (click-through #11).
+ */
+export function InvoicePdf({ model: shown }: { model: InvoiceModel }) {
+  const model = pdfSafe(shown);
   return (
     <Document title={`Invoice ${model.number}`} author={model.company.name}>
       <Page size="LETTER" style={styles.page}>

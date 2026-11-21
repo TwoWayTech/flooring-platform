@@ -101,3 +101,31 @@ function fullDecimals(value: DecimalInput, kind: NumberKind, settings: NumberSet
 export function isRounded(value: DecimalInput, kind: NumberKind, settings: NumberSettings, delta = 0): boolean {
   return fullDecimals(value, kind, settings) > displayDecimals(kind, settings, delta);
 }
+
+/** Decimals the currency itself uses (2 for USD, 0 for JPY), whatever the display setting. */
+export function currencyDecimals(settings: Pick<NumberSettings, "locale" | "currency">): number {
+  const options = new Intl.NumberFormat(settings.locale, { style: "currency", currency: settings.currency });
+  return options.resolvedOptions().maximumFractionDigits ?? 2;
+}
+
+/** Number kinds on a customer or supplier document; a unit price prints at its stored precision. */
+export type DocumentNumberKind = NumberKind | "unitPrice";
+
+/**
+ * Formats a number for a document someone outside the company receives: the invoice on screen and
+ * in the PDF, the receipt, the purchase order and customer messages (click-through #55). The
+ * display setting (Settings → Number format) is a screen preference, so documents never print
+ * fewer decimals than were stored: money at the currency's full precision, a unit price at every
+ * decimal it was stored with (at least the currency's, at most the unit cost's 4), and quantities
+ * and rates at every stored decimal (at least the display setting). Only the negative style, the
+ * locale and the currency carry over, so the lines and totals a customer reads always add up.
+ */
+export function formatDocumentNumber(value: DecimalInput, kind: DocumentNumberKind, settings: NumberSettings): string {
+  const money = currencyDecimals(settings);
+  if (kind === "money") return formatNumber(value, "money", settings, { decimals: money });
+  if (kind === "unitPrice") {
+    const places = Math.min(dec(value).decimalPlaces(), NUMBER_KINDS.unitCost.max);
+    return formatNumber(value, "money", settings, { decimals: Math.max(money, places) });
+  }
+  return formatFull(value, kind, settings);
+}

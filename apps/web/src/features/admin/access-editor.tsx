@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Eye, Save } from "lucide-react";
 import { toast } from "sonner";
 import {
+  endSentence,
   mayChangeCompanyAccess,
   moduleInfo,
   offeredModules,
@@ -115,7 +116,7 @@ export function AccessEditor({ company, directory }: AccessEditorProps) {
     try {
       await api.updatePlatformCompanyAccess(company.id, patch);
       setConfirming(false);
-      toast.success(`Access saved for ${company.name}. It applies at once.`);
+      toast.success(`${endSentence(`Access saved for ${company.name}`)} It applies at once.`);
     } catch (failure) {
       setConfirming(false);
       toast.error(failure instanceof Error ? failure.message : "Access was not saved.");

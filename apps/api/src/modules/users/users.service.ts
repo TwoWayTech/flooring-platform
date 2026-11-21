@@ -26,6 +26,7 @@ import {
   branchPlacementDenial,
   canAssignRole,
   canManageHolder,
+  endSentence,
   hasActiveOwner,
   type CompanyId,
   type PermissionKey,
@@ -466,8 +467,8 @@ export class UsersService {
       to: [to],
       subject: `You're invited to ${name}`,
       text: existing
-        ? `You have been added to ${name}. Open this link to accept, then sign in with your usual password:\n\n${url}\n\nThe link works for ${INVITATION_DAYS} days.`
-        : `You have been invited to ${name}. Open this link to choose your password:\n\n${url}\n\nThe link works for ${INVITATION_DAYS} days. If you did not expect this, ignore this email.`,
+        ? `${endSentence(`You have been added to ${name}`)} Open this link to accept, then sign in with your usual password:\n\n${url}\n\nThe link works for ${INVITATION_DAYS} days.`
+        : `${endSentence(`You have been invited to ${name}`)} Open this link to choose your password:\n\n${url}\n\nThe link works for ${INVITATION_DAYS} days. If you did not expect this, ignore this email.`,
     });
   }
 }
