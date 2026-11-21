@@ -81,14 +81,10 @@ test.describe("customer payments (spec Appendix A)", () => {
     await expect(statusPills(page).first()).toHaveText("Partly paid");
   });
 
-  test("Sales records a deposit, which waits for a second person whatever the amount (plan N-1)", async ({ page }) => {
+  test("Sales sees an invoice's payments but records none by default (ADR 0061 decision 3)", async ({ page }) => {
     await signInAs(page, SUMMIT_SALES, "/sales/invoices/sm-inv-0198");
     await expect(page.getByRole("region", { name: "Payments" })).toBeVisible();
-    await fillPayment(page, "50", "ACH-SALES-1");
-    await sheet(page).locator("input[type=file]").setInputFiles(PDF);
-    await sheet(page).getByRole("button", { name: "Save payment" }).click();
-    await expect(page.getByText(/waits for verification/)).toBeVisible();
-    await expect(statusPills(page).first()).toHaveText("Pending verification");
+    await expect(page.getByRole("button", { name: "Record payment" })).toHaveCount(0);
   });
 
   test("the palette opens Record payment on an invoice", async ({ page }) => {

@@ -691,6 +691,70 @@ describe("employee portal API (needs the local PostgreSQL)", () => {
     }
   });
 
+  it("sends an Employee's and a Manager's own pay line with every figure My pay reads, and no rate or salary (finding #26)", async () => {
+    // The figures the My pay screen formats; each must arrive as a decimal string for these roles.
+    const READ = [
+      "hoursWorked",
+      "overtimeHours",
+      "paidLeaveHours",
+      "unpaidLeaveHours",
+      "straightTimePay",
+      "overtimePremium",
+      "paidLeavePay",
+      "nondiscretionaryBonus",
+      "discretionaryBonus",
+      "commissionPay",
+      "overtimeTrueUp",
+      "salaryDeduction",
+      "grossPay",
+    ];
+    const sal = await person({
+      name: "Sal Salaried",
+      payType: "salary",
+      payRate: "52520.00",
+      flsaStatus: "exempt",
+      exemptionBasis: "administrative",
+    });
+    const max = await person({ name: "Max Manager", payRate: "33.25" });
+    const salUser = await member(["employee"], sal.id);
+    const maxUser = await member(["manager"], max.id);
+    await rows((db) =>
+      db.insert(payPeriodLines).values([
+        payLine(ids.approved, sal.id, {
+          baseRate: "0.00",
+          straightTimePay: "0.00",
+          salaryAmount: "1010.00",
+          grossPay: "1010.00",
+        }),
+        payLine(ids.approved, max.id, { baseRate: "33.25", straightTimePay: "1330.00", grossPay: "1330.00" }),
+      ]),
+    );
+    const cases = [
+      { cookie: await harness.signIn(salUser.email), id: sal.id, payType: "salary", gross: "1010.00" },
+      { cookie: await harness.signIn(maxUser.email), id: max.id, payType: "hourly", gross: "1330.00" },
+    ];
+    for (const { cookie, id, payType, gross } of cases) {
+      const body = await portal(cookie);
+      expect(body.visible.pay).toBe(true);
+      // The screen tells salary from hours pay by the record's pay type, which travels.
+      expect(body.employee).toMatchObject({ id, payType });
+      expect(body.pay).toHaveLength(1);
+      const { line } = body.pay[0]!;
+      for (const field of READ) expect(line[field], field).toMatch(/^-?\d+(\.\d+)?$/);
+      expect(line.grossPay).toBe(gross);
+      // Neither role holds hr.employee.view_sensitive, so the reserved pay-rate names stay stripped
+      // (CLAUDE.md rule 5): the line's rate and the period's salary, which gives the annual salary away.
+      expect(line).not.toHaveProperty("baseRate");
+      expect(line).not.toHaveProperty("salaryAmount");
+      expect(body.employee).not.toHaveProperty("payRate");
+      const text = JSON.stringify(body);
+      for (const secret of ["52520.00", "33.25"]) expect(text, secret).not.toContain(secret);
+    }
+    // The owner, who holds view_sensitive, still gets the full line.
+    const owner = await portal(cookies.owner);
+    expect(owner.pay[0]!.line).toHaveProperty("salaryAmount", "0.00");
+  });
+
   it("gives someone who has left no team calendar and no clock", async () => {
     await rows((db) => db.update(employees).set({ status: "terminated" }).where(eq(employees.id, ids.ana)));
     try {

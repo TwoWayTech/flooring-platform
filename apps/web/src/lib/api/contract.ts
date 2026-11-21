@@ -18,6 +18,7 @@ import type {
   ChangeOrder,
   Contract,
   ContractBilling,
+  ContractSchedule,
   ContractLine,
   InsuranceCertificate,
   LienWaiver,
@@ -29,8 +30,8 @@ import type {
   ImportCounts,
   ImportTable,
   PayPeriod,
-  PayPeriodLine,
   PtoRequest,
+  ViewedPayLine,
   CommissionStatementRow,
   TeamCommission,
   TimeOffEntry,
@@ -194,9 +195,12 @@ export interface PayBlocker {
   status: Timesheet["status"] | "missing";
 }
 
-/** One person's line in a pay period, with whether they are left out of the run. */
+/**
+ * One person's line in a pay period, with whether they are left out of the run. A reviewer without
+ * hr.employee.view_sensitive gets the line without rate or salary (CLAUDE.md rule 5).
+ */
 export interface PayReviewRow {
-  line: PayPeriodLine;
+  line: ViewedPayLine;
   employee: Employee;
   excludedReason: string | null;
 }
@@ -278,10 +282,10 @@ export interface MyVisibility {
   clock: boolean;
 }
 
-/** One pay period on My pay. */
+/** One pay period on My pay; the Employee and Manager roles get the line without rate or salary (ADR 0049). */
 export interface MyPayRow {
   period: PayPeriod;
-  line: PayPeriodLine;
+  line: ViewedPayLine;
 }
 
 /** Everything the portal shows, for the signed-in person only (spec C2). */
@@ -594,6 +598,10 @@ export interface ContractsData {
   locations: Location[];
   bills: Bill[];
   supplierPayments: SupplierPayment[];
+  /** Each line's billed, retained and remaining money and what each release paid out, from the server (rules 10a, 11a). */
+  schedule: ContractSchedule;
+  /** Supplier contacts, so a subcontract's signer starts as the supplier's primary contact. */
+  supplierContacts: SupplierContact[];
 }
 
 /** The records the Purchasing page reads together (ApiClient `purchasingData`). */

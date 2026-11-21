@@ -1,5 +1,5 @@
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
-import { addDays, dec, type PayPeriodLine, type PtoRequest } from "@workspace/shared";
+import { addDays, dec, type PtoRequest, type ViewedPayLine } from "@workspace/shared";
 import { FLOW_TAG } from "../../e2e/helpers";
 import { EMPLOYEE_EMAIL, HR_EMAIL } from "../accounts";
 import {
@@ -74,7 +74,7 @@ async function expectVacationShown(page: Page, balance: PortalAnswer["balances"]
 }
 
 /** The pay figures time off moves, to compare a review before and after. */
-function leaveFigures(line: PayPeriodLine): Pick<PayPeriodLine, "paidLeaveHours" | "paidLeavePay" | "grossPay"> {
+function leaveFigures(line: ViewedPayLine): Pick<ViewedPayLine, "paidLeaveHours" | "paidLeavePay" | "grossPay"> {
   return { paidLeaveHours: line.paidLeaveHours, paidLeavePay: line.paidLeavePay, grossPay: line.grossPay };
 }
 

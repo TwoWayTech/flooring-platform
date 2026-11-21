@@ -64,9 +64,9 @@ describe("hub report dates (spec rule 24, S-PER-2)", () => {
       from: "2026-09-01",
       invoicesTo: "2026-11-05",
       paymentsTo: "2026-11-04",
-      expensesTo: "2026-11-30",
+      profitTo: "2026-11-30",
     });
     expect(hubWindow("1m", "2026-12-31").invoicesTo).toBe("2027-01-01");
-    expect(hubWindow("ytd", "2024-02-10").expensesTo).toBe("2024-02-29");
+    expect(hubWindow("ytd", "2024-02-10").profitTo).toBe("2024-02-29");
   });
 });
