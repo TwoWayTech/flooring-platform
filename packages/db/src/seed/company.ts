@@ -98,17 +98,20 @@ async function seedOrganization(tx: CompanyDb, { company, fixtures }: DemoCompan
     .insert(branches)
     .values(company.branches.map((branch) => ({ ...branch, id: seedId(branch.id) })))
     .onConflictDoNothing();
-  await tx
-    .insert(locations)
-    .values(
-      fixtures.locations.map((location) => ({
-        ...location,
-        id: seedId(location.id),
-        branchId: seedId(location.branchId),
-        floorAreaSqFt: location.floorAreaSqFt ?? null,
-      })),
-    )
-    .onConflictDoNothing();
+  // An HR Suite company (Harbor) has no warehouses or showrooms.
+  if (fixtures.locations.length > 0) {
+    await tx
+      .insert(locations)
+      .values(
+        fixtures.locations.map((location) => ({
+          ...location,
+          id: seedId(location.id),
+          branchId: seedId(location.branchId),
+          floorAreaSqFt: location.floorAreaSqFt ?? null,
+        })),
+      )
+      .onConflictDoNothing();
+  }
   await tx.insert(settings).values(settingsRows(company.id, fixtures.settings)).onConflictDoNothing();
   await tx.insert(documentSequences).values(sequenceRows(company.id, fixtures.settings)).onConflictDoNothing();
   const tax = fixtures.settings.localization.tax;

@@ -38,6 +38,19 @@ export const INSTALLER_EMAIL = "marcus.bell@summitfloor.example";
  */
 export const DISABLED_EMAIL = "victor.sims@summitfloor.example";
 
+/**
+ * Harbor Staffing Co.'s Owner, Elena Brooks: the HR Suite company `pnpm db:seed` writes for local testing
+ * only (ADR 0065). The Owner role requires MFA. She signs in on the HR host (`/login?product=hr` on localhost).
+ */
+export const HARBOR_OWNER_EMAIL = "elena.brooks@harborstaffing.example";
+
+/**
+ * The platform admin `pnpm db:seed` writes for local testing only (ADR 0065): an `owner` in
+ * platform_admins whose home company is Summit, as an Employee, since there is no admin host yet.
+ * Platform admins require MFA.
+ */
+export const PLATFORM_ADMIN_EMAIL = "platform.admin@platform.example";
+
 /** The seeded accounts these tests sign in with, reset before each run (global-setup.ts). */
 export const SEEDED_EMAILS = [
   OWNER_EMAIL,
@@ -48,6 +61,8 @@ export const SEEDED_EMAILS = [
   EMPLOYEE_EMAIL,
   WAREHOUSE_EMAIL,
   PURCHASING_EMAIL,
+  HARBOR_OWNER_EMAIL,
+  PLATFORM_ADMIN_EMAIL,
 ] as const;
 
 /** The password `pnpm db:seed` gave the seeded users. */
@@ -104,6 +119,17 @@ export async function signInAndEnrolOwner(page: Page): Promise<string> {
  * authenticator: global-setup.ts or the spec's own reset clears it.
  */
 export async function signInAndEnrol(page: Page, email: string): Promise<string> {
+  const secret = await enrolAtSignIn(page, email);
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+  return secret;
+}
+
+/**
+ * The sign-in and MFA set-up steps of `signInAndEnrol`, without waiting for the app shell: for an
+ * account whose first screen after set-up is not the shell, such as the seeded platform admin
+ * (platform-seeded-admin.spec.ts). Returns the authenticator app's setup key.
+ */
+export async function enrolAtSignIn(page: Page, email: string): Promise<string> {
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(seedPassword());
@@ -116,6 +142,5 @@ export async function signInAndEnrol(page: Page, email: string): Promise<string>
   await page.getByRole("button", { name: "Turn on two-step sign-in" }).click();
   await page.getByLabel("I have saved my backup codes").check();
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
   return secret;
 }
