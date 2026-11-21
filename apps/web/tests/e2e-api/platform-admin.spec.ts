@@ -76,7 +76,9 @@ test.describe("platform admin console (api mode)", () => {
     await expect(page.getByText("That code is not right.")).toBeVisible();
     await page.getByLabel("Authenticator code").fill(nextCode(secret));
     await page.getByRole("button", { name: "Confirm" }).click();
-    await expect(page.getByText(`Access saved for ${SUMMIT}. It applies at once.`)).toBeVisible();
+    // The name's own period ends the sentence: never "Co.." (click-through #42).
+    await expect(page.getByText("Access saved for Summit Floor Co. It applies at once.")).toBeVisible();
+    await expect(page.getByText("Co..")).toHaveCount(0);
 
     await page.reload();
     await expect(page.getByRole("checkbox", { name: BOX })).not.toBeChecked();
