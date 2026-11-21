@@ -78,3 +78,14 @@ export function customerReceivable(
     lastPaymentAt: paidOn.at(-1) ?? null,
   };
 }
+
+/**
+ * Whether a customer owes more than their credit limit (click-through #18). A limit of zero means
+ * none was set (spec "Adding a customer" starts at 0.00), so it is never exceeded. The credit limit
+ * is sensitive (CLAUDE.md rule 5): the server strips it from viewers without view_sensitive, so a
+ * missing limit answers false and only people who see the limit see the warning.
+ */
+export function overCreditLimit(openBalance: string, creditLimit: string | null | undefined): boolean {
+  if (!creditLimit || !dec(creditLimit).gt(0)) return false;
+  return dec(openBalance).gt(creditLimit);
+}

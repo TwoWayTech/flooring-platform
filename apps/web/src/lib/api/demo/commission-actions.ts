@@ -367,6 +367,7 @@ export async function issueCreditNote(ctx: ActionContext, invoiceId: string, inp
     isReturn: true,
     creditForInvoiceId: invoice.id,
     issuedAt: ctx.today,
+    createdAt: ctx.now,
     dueAt: ctx.today,
     sentAt: ctx.today,
     refundedAt: null,

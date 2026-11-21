@@ -6,7 +6,6 @@ import { Paperclip } from "lucide-react";
 import { toast } from "sonner";
 import { featureOn, PAYMENT_METHOD_LABELS, type FileMeta, type PaymentMethod } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
-import { Num } from "@workspace/ui/components/num";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
 import { QueryFallback } from "@/components/query-fallback";
@@ -16,6 +15,7 @@ import { FileViewerDialog } from "@/features/invoices/payments/file-viewer-dialo
 import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
+import { OWN_PAYMENT_LABEL, queueSummary, recordedByViewer } from "./payments-queue-words";
 
 /** One payment waiting for a second person, customer or supplier (audit U-15). */
 interface QueueRow {
@@ -107,7 +107,20 @@ export function PaymentsQueue() {
 
   if (data.status !== "ready") return <QueryFallback query={data} className="h-96" label="Loading payments" />;
   const columns: ColumnSpec<QueueRow>[] = [
-    { id: "number", header: "Payment", value: (r) => r.number },
+    {
+      id: "number",
+      header: "Payment",
+      value: (r) => r.number,
+      // Marked in the first column, so one's own payment reads as such at any width (click-through #36).
+      cell: (r) => (
+        <span className="flex flex-col">
+          <span>{r.number}</span>
+          {recordedByViewer(r, user.id) ? (
+            <span className="text-muted-foreground text-xs">{OWN_PAYMENT_LABEL}</span>
+          ) : null}
+        </span>
+      ),
+    },
     { id: "kind", header: "Type", filter: "select", value: (r) => (r.kind === "customer" ? "Customer" : "Supplier") },
     { id: "party", header: "From or to", value: (r) => r.party },
     {
@@ -147,7 +160,7 @@ export function PaymentsQueue() {
       visualOnly: true,
       value: () => null,
       cell: (r) =>
-        r.recordedById === user.id ? (
+        recordedByViewer(r, user.id) ? (
           <span className="text-muted-foreground text-xs">Someone else verifies it</span>
         ) : (
           <span className="flex gap-1.5">
@@ -163,10 +176,7 @@ export function PaymentsQueue() {
   ];
   return (
     <>
-      <p className="text-muted-foreground text-sm">
-        <Num kind="count" value={data.data.filter((r) => r.recordedById !== user.id).length} /> waiting for you to
-        check.
-      </p>
+      <p className="text-muted-foreground text-sm">{queueSummary(data.data, user.id)}</p>
       <DataTable
         id="finance-payments"
         rows={data.data}

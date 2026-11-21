@@ -3,6 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type DragEvent } from "react";
 import { FileText, ImageOff, Paperclip, X } from "lucide-react";
 import { MAX_PROOF_FILES } from "@workspace/shared";
+import { checkPickedProofFiles } from "./check-proof-files";
 import { Button } from "@workspace/ui/components/button";
 import { Num } from "@workspace/ui/components/num";
 import { cn } from "@workspace/ui/lib/utils";
@@ -56,14 +57,17 @@ export function ProofFilesField({
   const input = useRef<HTMLInputElement>(null);
   const hintId = useId();
   const [over, setOver] = useState(false);
-  const add = (picked: FileList | null) => {
+  const [refused, setRefused] = useState<string[]>([]);
+  const add = async (picked: FileList | readonly File[] | null) => {
     if (!picked) return;
-    onChange([...files, ...Array.from(picked)].slice(0, MAX_PROOF_FILES));
+    const checked = await checkPickedProofFiles(files.length, Array.from(picked));
+    setRefused(checked.refused);
+    if (checked.accepted.length > 0) onChange([...files, ...checked.accepted]);
   };
   const onDrop = (event: DragEvent) => {
     event.preventDefault();
     setOver(false);
-    add(event.dataTransfer.files);
+    void add(event.dataTransfer.files);
   };
   const full = files.length >= MAX_PROOF_FILES;
   return (
@@ -105,14 +109,23 @@ export function ProofFilesField({
           tabIndex={-1}
           aria-hidden="true"
           onChange={(e) => {
-            add(e.target.files);
+            // Copy the list before clearing the input, which empties the live FileList.
+            const picked = e.target.files ? Array.from(e.target.files) : [];
             e.target.value = "";
+            void add(picked);
           }}
         />
       </div>
       <p id={hintId} className={cn("text-xs", error ? "text-danger-ink" : "text-muted-foreground")}>
         {error ?? message ?? `PDF, JPG, PNG, WebP or HEIC, up to 5 MB each, at most ${MAX_PROOF_FILES} files.`}
       </p>
+      {refused.length > 0 ? (
+        <ul role="alert" aria-label="Files not attached" className="text-danger-ink flex flex-col gap-1 text-xs">
+          {refused.map((words) => (
+            <li key={words}>{words}</li>
+          ))}
+        </ul>
+      ) : null}
       {files.length > 0 ? (
         <ul className="flex flex-col gap-2" aria-label="Attached files">
           {files.map((file, i) => (
