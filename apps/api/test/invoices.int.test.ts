@@ -19,7 +19,9 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import request from "supertest";
 import { v7 as uuidv7 } from "uuid";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { StorageProvider } from "@workspace/providers";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { STORAGE } from "../src/core/storage/storage.module";
 import { dayIn } from "../src/modules/sales/sales-common";
 import { AuthHarness, PASSWORD, sessionCookie } from "./auth-harness";
 
@@ -532,8 +534,16 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     });
     expect((await call("post", "/refunds", cookies.owner).send(refund("200.00"))).status).toBe(400);
     // A refund sends money out: refused without a fresh step-up, and nothing is refunded (ADR 0063).
+    // The code is asked before its proof is stored, so the refusal writes no file either.
     await harness.dropStepUp(cookies.owner);
-    const unconfirmed = await call("post", "/refunds", cookies.owner).send(refund("50.00"));
+    const put = vi.spyOn(harness.app.get<StorageProvider>(STORAGE), "put");
+    let unconfirmed;
+    try {
+      unconfirmed = await call("post", "/refunds", cookies.owner).send(refund("50.00"));
+      expect(put).not.toHaveBeenCalled();
+    } finally {
+      put.mockRestore();
+    }
     expect([unconfirmed.status, unconfirmed.body.code]).toEqual([403, "step_up_required"]);
     expect(
       ((await call("get", "/refunds", cookies.owner).expect(200)).body as { customerId: string }[]).filter(

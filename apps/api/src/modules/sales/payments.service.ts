@@ -412,13 +412,17 @@ export class PaymentsService {
     const clock = await companyClock(this.control.db, tenant);
     const [settings, money] = await Promise.all([loadPaymentSettings(db), loadMoneyFormat(db)]);
     const id = uuidv7();
+    // A refund sends money out, so it needs a fresh step-up (ADR 0063): asked after the refund's own
+    // checks against the credit as it reads now, and before any proof file is stored, so a refusal
+    // writes nothing anywhere. The checks run again under the customer's lock below.
+    const creditNowUnlocked = moneyString(await creditNow(db, this.control.db, customer.id, clock));
+    firstProblem(validateRefund(input, { credit: creditNowUnlocked, today: clock.day, formatMoney: money }));
+    await this.stepUp.require(actor.session);
     await withStoredProofs(this.storage, tenant.companyId, proofs, (attach) =>
       db.transaction(async (tx) => {
         await lockCustomer(tx, customer.id);
         const credit = moneyString(await creditNow(tx, this.control.db, customer.id, clock));
         firstProblem(validateRefund(input, { credit, today: clock.day, formatMoney: money }));
-        // A refund sends money out, so it needs a fresh step-up, asked after its checks (ADR 0063).
-        await this.stepUp.require(actor.session);
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext('sales:refund-number'))`);
         const used = await tx.select({ number: refunds.number }).from(refunds);
         const now = new Date();

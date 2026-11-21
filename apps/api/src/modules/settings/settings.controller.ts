@@ -235,6 +235,9 @@ export class SettingsController {
         if (!access.isOwner) throw new ForbiddenException({ code: "owner_only", message: EXPENSE_APPROVAL_OWNER_ONLY });
         await this.stepUp.require(session);
       },
+      // Two first saves at once are both judged against the never-saved answer (approval off): the
+      // second is a 409, so what is stored is always what its own judgement saw (as Stock rules).
+      "refuse",
     );
     return expenses;
   }

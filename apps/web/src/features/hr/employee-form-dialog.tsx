@@ -86,12 +86,15 @@ function sameRate(a: string, b: string): boolean {
 /**
  * Whether a save changes a person's pay facts as the API judges them (ADR 0063): the rate, pay type
  * and salaried hours only when the saver holds the pay key (without it the API keeps the stored
- * ones), the worker type and overtime status always. A rate is compared by value.
+ * ones), the worker type, overtime status, work state and manager always. A rate is compared by
+ * value. A change this misses (a sign-in link) is still caught: the API asks and the form asks then.
  */
 function payFactsChanged(before: Employee, draft: EmployeeInput, seesPay: boolean): boolean {
   const flsa = (e: Pick<EmployeeInput, "workerType" | "flsaStatus">) =>
     e.workerType === "1099" ? "not_applicable" : e.flsaStatus;
   if (before.workerType !== draft.workerType || flsa(before) !== flsa(draft)) return true;
+  // The work state picks the overtime rules; the manager is paid overrides on this person's sales.
+  if (before.state !== draft.state || (before.managerId ?? null) !== (draft.managerId ?? null)) return true;
   if (!seesPay) return false;
   const rateChanged =
     before.payRate !== undefined && draft.payRate !== undefined && !sameRate(before.payRate, draft.payRate);
