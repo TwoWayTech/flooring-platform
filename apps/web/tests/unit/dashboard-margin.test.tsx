@@ -29,7 +29,7 @@ import type { SalesLedger } from "@/lib/sales-ledger";
 
 // Today is the fixtures' anchor. Team's commission read is the only query rendered; it has no lines,
 // and the table's URL state reads an empty address.
-vi.mock("@/lib/api", () => ({ api: { today: () => "2026-11-04", timeZone: () => "America/Denver" } }));
+vi.mock("@/lib/api", () => ({ api: { today: () => "2026-11-04" } }));
 vi.mock("@/lib/api/use-api", () => ({ useApiQuery: () => ({ status: "ready", data: [] }) }));
 vi.mock("next/navigation", () => ({
   usePathname: () => "/sales",

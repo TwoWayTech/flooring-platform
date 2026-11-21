@@ -120,6 +120,11 @@ export interface WorkspaceFacts {
   user: User;
   roles: Role[];
   access: Access;
+  /**
+   * The IANA zone the company's moments are shown in (ADR 0064): `GET /company`'s `company.timeZone`
+   * (`tenants.time_zone`) in api mode, the open company's zone in the demo; null when Intl doesn't know it.
+   */
+  timeZone: string | null;
 }
 
 /** Record collections a company holds; each maps to a resource endpoint in docs/api-contract.md. */
@@ -765,11 +770,6 @@ export interface ApiClient {
   subscribe(listener: () => void): () => void;
   /** Today's date (YYYY-MM-DD) as the data sees it. */
   today(): string;
-  /**
-   * The IANA zone the open company's moments are shown in (ADR 0064): the one `today()` reads, or
-   * null while no company's zone is known (the sign-in and platform pages), when the browser's applies.
-   */
-  timeZone(): string | null;
   /** Restores every company to the generated fixtures. */
   resetDemo(): Promise<void>;
   /**

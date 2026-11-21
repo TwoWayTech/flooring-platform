@@ -21,7 +21,9 @@ The API sent most moments as `toISOString().slice(0, 16)`, UTC minutes with no m
 
 - `packages/shared/src/calendar/moments.ts`: `momentInZone` reads either form on a zone's clock (wall time, abbreviation, offset; the autumn overlap is the earlier instant, the spring gap daylight time, as `zonedToInstantLenient`), `clockText` writes a 12-hour time ("7:56 AM"), `momentText` the email form, `momentIso` the export form.
 - `apps/web/src/lib/moments.ts` `formatWhen` and the hook `useFormatDate` (which every screen already used) apply the company's date format to the moment's **company day**, and with `withTime` add the 12-hour time and the zone: **"Nov 21, 2026, 7:56 AM MST"**. A date shown without its time is also the company's day, not the UTC or browser day.
-- The zone is `api.timeZone()`, a new client-local ApiClient method: in api mode the zone `GET /company` gave (the one `today()` reads, `CompanyDay`), in demo mode the open company's `localization.region.timeZone`. Every person reads `GET /company`, so a person who can't read Settings still gets the company's zone.
+- The zone is the workspace's `timeZone` (`useTimeZone`): in api mode `GET /company`'s `company.timeZone`, `tenants.time_zone`, the zone `today()` reads; in the demo the open company's `localization.region.timeZone`. The workspace is React state the shell re-reads, so every screen follows a change of company or zone, and no company screen renders before it exists. Every person reads `GET /company`, so a person who can't read Settings still gets the company's zone (Settings' region copy can be DemoStore's for them).
+- Invoice and receipt PDFs take that same zone as a parameter (`buildInvoiceModel`, `buildReceiptModel`), never the settings copy.
+- A rate changed on a document where no rule applies is valid from the company's day the change was made (`withOverride` reads `override.at` in the company's zone), not the UTC day.
 
 ### Where the zone is named
 
@@ -33,7 +35,7 @@ The API sent most moments as `toISOString().slice(0, 16)`, UTC minutes with no m
 
 ### Exports and documents
 
-- **CSV exports write a moment as ISO 8601 with the company's offset**, `2026-11-21T07:56:00-07:00`, so a spreadsheet keeps the exact instant and still reads the company's clock (`toCsv` with a zone; the DataTable export and the reports hub pass it). Calendar dates and every other value are exported as stored.
+- **CSV exports write a moment as ISO 8601 with the company's offset**, `2026-11-21T07:56:00-07:00`, so a spreadsheet keeps the exact instant and still reads the company's clock (`toCsv` with a zone; the DataTable export and the reports hub pass it). Calendar dates and every other value are exported as stored. A wall time with no mark is read as the company's clock unless its column names its own zone (`ColumnSpec.timeZone`): a column of meeting times must name the meeting's `timeZone`, so it exports with that zone's offset. No table lists meeting times today.
 - **Invoice and receipt PDFs** print dates only; a moment on them (paid on) is printed as the company's day through the same formatter.
 - **Emails**: the only template value that carries a time is `meeting.when`, now **"Nov 19, 2026 at 8:30 AM MST"** in the meeting's zone (`meetingWhenText(start, zone)`; meetings.md "Emails", which said `YYYY-MM-DD at HH:mm` with no zone). Every other template value is a date or a period.
 - **ICS** files already carry the zone: `DTSTART;TZID=…` with a `VTIMEZONE` block (ADR 0051). Unchanged.

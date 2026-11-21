@@ -37,7 +37,15 @@ describe("an invoice shows credit applied and amounts written off only when ther
   const customer = summit.customers.find((c) => c.id === invoice.customerId)!;
   const ledger = invoiceLedger(invoice, { payments: [], adjustments: [] }, invoice.issuedAt);
   const model = (credited: string, writtenOff: string) =>
-    buildInvoiceModel(invoice, { ...ledger, credited, writtenOff }, customer, undefined, [], summit.settings);
+    buildInvoiceModel(
+      invoice,
+      { ...ledger, credited, writtenOff },
+      customer,
+      undefined,
+      [],
+      summit.settings,
+      "America/Denver",
+    );
 
   it("leaves both lines out at zero, at any scale", () => {
     for (const zero of ["0", "0.00", "0.000"]) {

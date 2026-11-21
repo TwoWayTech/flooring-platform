@@ -20,6 +20,7 @@ import { InvoiceStock } from "./invoice-stock";
 import { InvoiceSummary } from "./invoice-summary";
 import { InvoiceTimeline, timelineSteps } from "./invoice-timeline";
 import { saveBlob } from "@/lib/save-blob";
+import { useTimeZone } from "@/lib/use-format-date";
 import { PaymentsSection } from "./payments/payments-section";
 import type { ReceiptModel } from "./payments/receipt-pdf";
 import { RecordPaymentSheet } from "./payments/record-payment-sheet";
@@ -47,6 +48,7 @@ async function downloadReceipt(model: ReceiptModel) {
  */
 export function InvoicePage({ invoiceId }: { invoiceId: string }) {
   const can = useCan();
+  const zone = useTimeZone();
   const [pending, setPending] = useState(false);
   const [recording, setRecording] = useState<"payment" | "deposit" | null>(null);
   const [voiding, setVoiding] = useState<Payment | null>(null);
@@ -83,7 +85,7 @@ export function InvoicePage({ invoiceId }: { invoiceId: string }) {
   const { invoice, customer, quote, sales, settings, locations, job, users, reservations, products, rolls } = data.data;
   const ledger = sales.ledgers.get(invoiceId)!;
   const payments = sales.payments.filter((p) => p.invoiceId === invoiceId);
-  const model = buildInvoiceModel(invoice, ledger, customer, quote, payments, settings);
+  const model = buildInvoiceModel(invoice, ledger, customer, quote, payments, settings, zone);
   const paymentsOn = featureOn("sales.payments");
   const open = dec(ledger.balance).gt(0) && ledger.state !== "void" && ledger.state !== "return";
   const canRecord = paymentsOn && open && can("sales.payment.record");
@@ -104,7 +106,7 @@ export function InvoicePage({ invoiceId }: { invoiceId: string }) {
   async function onReceipt(payment: Payment) {
     try {
       const { buildReceiptModel } = await import("./payments/receipt-pdf");
-      await downloadReceipt(buildReceiptModel(payment, invoice, ledger, customer!, settings));
+      await downloadReceipt(buildReceiptModel(payment, invoice, ledger, customer!, settings, zone));
       toast.success(`${payment.number}-receipt.pdf downloaded`);
     } catch {
       toast.error("The receipt could not be created. Try again.");

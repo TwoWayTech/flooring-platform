@@ -1,4 +1,5 @@
 import {
+  isKnownTimeZone,
   isModuleKey,
   isPermissionKey,
   type CompanyAnswer,
@@ -33,6 +34,8 @@ export function workspaceFromAnswer(answer: CompanyAnswer): WorkspaceFacts {
       dataScope: answer.access.dataScope,
       isOwner: answer.access.isOwner,
     },
+    // The company's zone, `tenants.time_zone`, which every screen shows moments in (ADR 0064).
+    timeZone: isKnownTimeZone(answer.company.timeZone) ? answer.company.timeZone : null,
   };
 }
 

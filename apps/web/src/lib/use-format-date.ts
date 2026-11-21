@@ -1,20 +1,26 @@
 "use client";
 
 import { useCallback, useContext } from "react";
-import { WorkspaceContext } from "@/components/workspace/workspace-context";
-import { api } from "@/lib/api";
+import { WorkspaceContext, type Workspace } from "@/components/workspace/workspace-context";
 import { browserZone, formatWhen } from "@/lib/moments";
 
 /** Dates outside a company, such as on the platform console, which belongs to no company's format. */
 const PLATFORM_DATE_FORMAT = "MMM d, yyyy";
 
 /**
- * The zone this screen shows moments in (ADR 0064): the open company's, the one `today()` reads;
- * the browser's outside a company workspace (the platform console), named like any other zone.
+ * The zone this screen shows moments in (ADR 0064): the open company's, from the workspace the shell
+ * read with GET /company (`tenants.time_zone`, the zone `today()` reads). The workspace is React state
+ * that the shell re-reads, so a screen re-renders when the company or its zone changes; no company
+ * screen renders before the workspace exists. Outside a company workspace (the platform console),
+ * or for a zone Intl doesn't know, it is the browser's zone, named like any other.
  */
 export function useTimeZone(): string {
-  const workspace = useContext(WorkspaceContext);
-  return (workspace ? api.timeZone() : null) ?? browserZone();
+  return zoneOf(useContext(WorkspaceContext));
+}
+
+/** The zone a workspace shows moments in, or the browser's without one (see `useTimeZone`). */
+export function zoneOf(workspace: Pick<Workspace, "timeZone"> | null): string {
+  return workspace?.timeZone ?? browserZone();
 }
 
 /**

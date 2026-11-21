@@ -428,11 +428,6 @@ export class DemoStore implements ApiClient {
     return this.current ? dayOf(this.current) : browserDay();
   }
 
-  timeZone() {
-    const zone = this.current?.settings.localization.region.timeZone;
-    return zone && isKnownTimeZone(zone) ? zone : null;
-  }
-
   async resetDemo() {
     clearStored();
     // Reset demo data clears payment files too (spec Appendix A "Files and storage").
@@ -878,7 +873,10 @@ export class DemoStore implements ApiClient {
     const access = viewerAccess(company, roles, user, null);
     const { name, city, state, modules, ceiling, branches } = company;
     const shown = seesCeiling((key) => access.permissions.has(key)) ? ceiling : [];
-    return { company: { name, city, state, modules, ceiling: shown, branches }, user, roles, access };
+    // The open company's zone, which every screen shows moments in (ADR 0064).
+    const zone = this.open().settings.localization.region.timeZone;
+    const timeZone = isKnownTimeZone(zone) ? zone : null;
+    return { company: { name, city, state, modules, ceiling: shown, branches }, user, roles, access, timeZone };
   }
 
   async getSettings() {

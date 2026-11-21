@@ -8,7 +8,7 @@ Owner decision 5 (ADR 0061): show every time in the company's zone with the zone
 
 - `packages/shared/src/calendar/moments.ts`: `momentInZone`, `clockText` (12-hour), `momentText`, `momentIso` (exports), `calendarDateText`, `utcMinuteAsInstant`.
 - API: every moment goes out as an instant with `Z` (`instantOf`, renamed from `minuteOf`; inventory and purchasing stamps; audit log; commission approval; contract signing; timesheet history). Legacy JSON rows (timesheet history, contract signature) are answered with the mark added; nothing stored is rewritten.
-- Web: `formatWhen` (lib/moments.ts) behind `useFormatDate`; `useTimeZone` reads the new client-local `api.timeZone()` (api mode: `CompanyDay`'s zone from `GET /company`; demo: the open company's region zone; the platform console: the browser's zone, named). The portal clock line (`clockedInText`), the contract signature line, moment dates that were sliced to a UTC day, meeting times in 12-hour form, CSV exports with the company's offset, invoice and receipt PDFs through the same formatter.
+- Web: `formatWhen` (lib/moments.ts) behind `useFormatDate`; `useTimeZone` reads the workspace's `timeZone` (api mode: `GET /company`'s `company.timeZone`; demo: the open company's region zone; the platform console: the browser's zone, named). The portal clock line (`clockedInText`), the contract signature line, moment dates that were sliced to a UTC day, meeting times in 12-hour form, CSV exports with the company's offset, invoice and receipt PDFs through the same formatter.
 - `meetingWhenText(start, zone)`: "Nov 19, 2026 at 8:30 AM MST" (meetings.md "Emails" updated).
 - Docs: ADR 0064, blueprint-delta row, api-contract "Bodies", meetings.md, coverage.md regenerated.
 

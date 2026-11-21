@@ -69,7 +69,15 @@ describe("the invoice PDF (click-through #11 and #55)", () => {
   const invoice = { ...source, lines: [boxed, labor] };
   const customer = summit.customers.find((c) => c.id === invoice.customerId)!;
   const ledger = invoiceLedger(invoice, { payments: [], adjustments: [] }, invoice.issuedAt);
-  const model = buildInvoiceModel(invoice, ledger, customer, undefined, [], wholeNumbers(summit.settings));
+  const model = buildInvoiceModel(
+    invoice,
+    ledger,
+    customer,
+    undefined,
+    [],
+    wholeNumbers(summit.settings),
+    "America/Denver",
+  );
 
   it("PDF1 the screen model keeps exact prices and the carton sign at 0-decimal display", () => {
     expect(model.lines.map((l) => l.price)).toEqual(["$2.57", "$2.75"]);

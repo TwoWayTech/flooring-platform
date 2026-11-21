@@ -11,7 +11,15 @@ describe("the invoice's tax note (owner's answer of 2026-11-20, sales.md rule 18
   const customer = summit.customers.find((c) => c.id === invoice.customerId)!;
   const ledger = invoiceLedger(invoice, { payments: [], adjustments: [] }, invoice.issuedAt);
   const model = (acceptedTotal: string) =>
-    buildInvoiceModel(invoice, ledger, customer, { ...quote, total: acceptedTotal }, [], summit.settings);
+    buildInvoiceModel(
+      invoice,
+      ledger,
+      customer,
+      { ...quote, total: acceptedTotal },
+      [],
+      summit.settings,
+      "America/Denver",
+    );
 
   it("TN1 names the accepted total and the quote when the invoice's total differs", () => {
     const note = model("1.00").taxNote;
@@ -22,6 +30,8 @@ describe("the invoice's tax note (owner's answer of 2026-11-20, sales.md rule 18
 
   it("TN2 says nothing when the totals agree, or without the quote", () => {
     expect(model(invoice.total).taxNote).toBeNull();
-    expect(buildInvoiceModel(invoice, ledger, customer, undefined, [], summit.settings).taxNote).toBeNull();
+    expect(
+      buildInvoiceModel(invoice, ledger, customer, undefined, [], summit.settings, "America/Denver").taxNote,
+    ).toBeNull();
   });
 });
