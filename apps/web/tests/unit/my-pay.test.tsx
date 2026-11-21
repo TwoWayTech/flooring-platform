@@ -1,10 +1,17 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { defaultNumberSettings, formatNumber, type Employee, type PayPeriodLine } from "@workspace/shared";
+import {
+  defaultNumberSettings,
+  formatNumber,
+  type Employee,
+  type PayPeriodLine,
+  type ViewedPayLine,
+} from "@workspace/shared";
 import { TooltipProvider } from "@workspace/ui/components/tooltip";
 import { MyPayView } from "@/features/my/my-pay";
-import type { MyPayLine, MyPortal } from "@/lib/api/contract";
+import type { MyPortal } from "@/lib/api/contract";
 import { loadCompanyFixtures } from "@/lib/api/demo/fixtures";
+import { strippedPayLine } from "./stripped-pay-line";
 
 /**
  * Finding #26: My pay crashed with "[DecimalError] Invalid argument: undefined" for every Employee
@@ -20,16 +27,10 @@ function employee(name: string): Employee {
 }
 
 /** A line as `GET /me/portal` sends it to someone without view_sensitive: no rate, no salary. */
-function stripped(line: PayPeriodLine): MyPayLine {
-  const sent: MyPayLine = { ...line, weeks: line.weeks.map((week) => ({ ...week })) };
-  for (const week of sent.weeks) delete week.regularRate;
-  delete sent.baseRate;
-  delete sent.salaryAmount;
-  return sent;
-}
+const stripped = strippedPayLine;
 
 /** The portal answer for one person with their line from Summit's first paid period. */
-function portalFor(person: Employee, line: MyPayLine): MyPortal {
+function portalFor(person: Employee, line: ViewedPayLine): MyPortal {
   return {
     employee: person,
     visible: { pay: true, commission: false, rates: false, teamCalendar: false, clock: false },

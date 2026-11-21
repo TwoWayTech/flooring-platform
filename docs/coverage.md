@@ -68,7 +68,7 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 | `hr.employees` | demo | `/hr/employees` (api) | 6 | 0 | 6 | 6 | 0 |
 | `hr.timesheets` | demo | `/hr/timesheets` (api) | 10 | 0 | 9 | 7 | 1 |
 | `hr.time-off` | demo | `/hr/time-off` (api) | 8 | 1 | 7 | 6 | 1 |
-| `hr.pay-periods` | demo | `/hr/pay-periods` (api) | 14 | 0 | 7 | 6 | 19 |
+| `hr.pay-periods` | demo | `/hr/pay-periods` (api) | 14 | 1 | 7 | 6 | 19 |
 | `hr.payroll.california` | build | — | 0 | 1 | 0 | 0 | 0 |
 | `settings.hr` | demo | `/settings/hr` (mixed) | 5 | 2 | 8 | 4 | 1 |
 
@@ -207,7 +207,7 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 | `/hr` | api | `hrData`, `listCommissionStatements`, `listPayPeriods` | — | `features.test.ts`, `notifications-api.test.ts` | `a11y.spec.ts`, `console.spec.ts`, `hr-workspace.spec.ts`, `responsive.spec.ts` | — |
 | `/hr/commissions` | api | `addCommissionAdjustment`, `approveStatement`, `assignPlan`, `commissionData`, `decideReversal`, `saveCommissionPlan` | — | — | `a11y.spec.ts`, `console.spec.ts`, `credit-notes.spec.ts`, `hr-workspace.spec.ts`, `responsive.spec.ts` | `demo-script.spec.ts` |
 | `/hr/employees` | api | `addEmployeeDocuments`, `getFile`, `hrData`, `saveEmployee`, `setChecklistItem`, `startOffboarding` | — | — | `a11y.spec.ts`, `console.spec.ts`, `hr-workspace.spec.ts`, `hr.spec.ts`, `import.spec.ts`, `responsive.spec.ts` | — |
-| `/hr/pay-periods` | api | `approvePayPeriod`, `exportPayPeriod`, `listPayPeriods`, `reopenPayPeriod`, `reviewPayPeriod`, `setPayExclusion` | — | — | `a11y.spec.ts`, `console.spec.ts`, `flows-batch3.spec.ts`, `hr-workspace.spec.ts`, `portal.spec.ts`, `responsive.spec.ts` | `demo-script.spec.ts` |
+| `/hr/pay-periods` | api | `approvePayPeriod`, `exportPayPeriod`, `listPayPeriods`, `reopenPayPeriod`, `reviewPayPeriod`, `setPayExclusion` | — | `pay-period-review.test.tsx` | `a11y.spec.ts`, `console.spec.ts`, `flows-batch3.spec.ts`, `hr-workspace.spec.ts`, `portal.spec.ts`, `responsive.spec.ts` | `demo-script.spec.ts` |
 | `/hr/time-off` | api | `decideTimeOff`, `hrData`, `requestTimeOff` | — | `features.test.ts` | `a11y.spec.ts`, `console.spec.ts`, `flows-batch3.spec.ts`, `hr-workspace.spec.ts`, `hr.spec.ts`, `responsive.spec.ts` | `f4-time-off-balance-and-pay.spec.ts` |
 | `/hr/timesheets` | api | `decideTimesheets`, `hrData`, `reopenTimesheet`, `uploadTimesheets` | — | — | `a11y.spec.ts`, `console.spec.ts`, `flows-batch3.spec.ts`, `hr-workspace.spec.ts`, `hr.spec.ts`, `portal.spec.ts`, `responsive.spec.ts` | `f3-timesheet-to-pay-period.spec.ts` |
 | `/installation` | mixed | `createCustomer` | `createInvoiceFromJob` (installation), `list:crews` (installation), `list:customers` (mixed), `list:jobs` (installation), `save:jobs` (installation), `signOffJob` (installation), `startJob` (installation) | `page-gates-host.test.ts` | `installation.spec.ts` | — |

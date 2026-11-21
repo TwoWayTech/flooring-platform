@@ -3,6 +3,7 @@
 import { bonusPay, dec, GROSS_PAY_LABEL } from "@workspace/shared";
 import { Num } from "@workspace/ui/components/num";
 import { Panel } from "@workspace/ui/components/panel";
+import { NotShown } from "@/components/not-shown";
 import type { MyPayRow, MyPortal } from "@/lib/api/contract";
 import { useFormatDate } from "@/lib/use-format-date";
 import { MyShell } from "./my-shell";
@@ -22,15 +23,7 @@ function Row({
   return (
     <div className="flex justify-between gap-3">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd>
-        {value === undefined ? (
-          <span className="text-muted-foreground" aria-label="Not shown">
-            —
-          </span>
-        ) : (
-          <Num kind={kind} value={value} unit={unit} />
-        )}
-      </dd>
+      <dd>{value === undefined ? <NotShown /> : <Num kind={kind} value={value} unit={unit} />}</dd>
     </div>
   );
 }
