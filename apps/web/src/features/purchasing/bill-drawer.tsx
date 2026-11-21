@@ -5,6 +5,7 @@ import Link from "next/link";
 import { CircleCheck, Paperclip, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import {
+  damagedLines,
   PAYMENT_METHOD_LABELS,
   type Bill,
   type BillLedger,
@@ -23,6 +24,7 @@ import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { FileViewerDialog } from "@/features/invoices/payments/file-viewer-dialog";
 import { api } from "@/lib/api";
 import { useFormatDate } from "@/lib/use-format-date";
+import { DamagedLines } from "./damaged-quantity";
 
 const STATUS = {
   pending: { tone: "warning", icon: CircleCheck, label: "Pending verification" },
@@ -116,6 +118,7 @@ export function BillDrawer({
             </p>
           ) : null}
           {bill.matchIssues.length ? <p className="text-warning-ink">{bill.matchIssues.join(" ")}</p> : null}
+          {order ? <DamagedLines lines={damagedLines(order, linked)} className="text-warning-ink" /> : null}
           {bill.files.length ? (
             <ul className="flex flex-col gap-1" aria-label="Supplier's invoice">
               {bill.files.map((f) => (

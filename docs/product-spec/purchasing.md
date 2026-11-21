@@ -231,7 +231,7 @@ Suppliers and contacts are deactivated, never deleted.
     if (diff.abs().lt("0.01")) return [];
     ```
 
-    Otherwise one line is stored, for example "Billed $X, received goods worth $Y (over by $Z)." It shows as Check in the Match column. The bill form starts at the received value.
+    Otherwise one line is stored, for example "Billed $X, received goods worth $Y (over by $Z)." It shows as Check in the Match column. The bill form starts at the received value. Nothing holds a flagged bill: the payment sheet shows each chosen flagged bill's match line and needs "Pay anyway" ticked before Save (click-through #25). The API takes the payment as before.
 
 22. **Due date.** `supplierDueDate` in `operations/purchasing.ts`. `issuedAt` for `pay_on_order` and `cod`. Plus 30, 60, 90 or 180 days for net terms. For `monthly_statement`, the last day of the month after the bill date:
 
@@ -391,7 +391,7 @@ Suppliers and contacts are deactivated, never deleted.
 | `poId`, `supplierId` | string | |
 | `locationId` | string | Default warehouse of the receipt |
 | `receivedAt`, `receivedById`, `receivedBy` | string | |
-| `note` | string | The form sends empty text |
+| `note` | string | The receive form sends the optional damage note when a line has damaged units, else empty text (click-through #24) |
 | `lines` | `ReceiptLine[]` | |
 | Line `poLineId`, `productId` | string | |
 | Line `received`, `damaged` | string | Good units go to stock and can be billed |

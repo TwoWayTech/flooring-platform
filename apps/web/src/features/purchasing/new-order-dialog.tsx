@@ -8,6 +8,7 @@ import {
   contactsOf,
   dec,
   defaultWarehouse,
+  editableDecimal,
   formatNumber,
   poTotal,
   roundMoney,
@@ -64,7 +65,8 @@ interface DraftLine {
  * New purchase order (spec B2): find or add the supplier and its sales rep, then lines in sq ft
  * with cartons beside them, a cost per sq ft and a warehouse per line. Anything added here is
  * saved to the directory at once. Long names wrap to two lines then truncate with a tooltip, and
- * the lines scroll inside their own box. An order with no email on file is marked as phoned in.
+ * the dialog scrolls as a whole on a short window, so the lines keep their height and scroll only
+ * sideways (click-through #22). An order with no email on file is marked as phoned in.
  */
 export function NewOrderDialog({ open, onOpenChange, suppliers, contacts, products, locations }: NewOrderDialogProps) {
   const { user } = useWorkspace();
@@ -101,7 +103,7 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, contacts, produc
           description: `${p.brand} ${p.name}`,
           quantity: p.sqFtPerCarton ?? (p.unit === "sq_ft" ? "100" : "10"),
           unit: p.unit,
-          unitCost: p.cost,
+          unitCost: editableDecimal(p.cost),
           ...(p.sqFtPerCarton ? { sqFtPerCarton: p.sqFtPerCarton } : {}),
         },
       },
@@ -147,7 +149,7 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, contacts, produc
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-surface flex max-h-[90dvh] flex-col sm:max-w-4xl">
+      <DialogContent className="bg-surface flex max-h-[90dvh] flex-col overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>New purchase order</DialogTitle>
           <DialogDescription>
@@ -191,10 +193,10 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, contacts, produc
           role="region"
           aria-label="Order lines"
           tabIndex={0}
-          className="border-hairline min-h-0 flex-1 overflow-auto rounded-md border"
+          className="border-hairline shrink-0 overflow-x-auto rounded-md border"
         >
           <table className="w-full min-w-[46rem] text-sm">
-            <thead className="bg-raised text-muted-foreground sticky top-0 z-10 text-xs">
+            <thead className="bg-raised text-muted-foreground text-xs">
               <tr>
                 <th scope="col" className="h-9 px-3 text-left font-medium">
                   Item
@@ -301,7 +303,7 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, contacts, produc
               })}
             </tbody>
             {drafts.length > 0 ? (
-              <tfoot className="bg-raised sticky bottom-0 z-10">
+              <tfoot className="bg-raised">
                 <tr className="border-hairline border-t font-semibold">
                   <td colSpan={4} className="h-10 px-3">
                     Total

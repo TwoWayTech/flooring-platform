@@ -33,9 +33,23 @@ import { useFormatDate } from "@/lib/use-format-date";
 const NO_FILE = "Attach the remittance, bank confirmation or check photo to continue.";
 
 /**
+ * The warning before paying bills whose total differs from the goods received, or null when every
+ * chosen bill matches. The spec flags a difference without blocking it (purchasing.md rule 21) and
+ * says nothing of holding the payment, so paying stays allowed after an explicit "Pay anyway"
+ * (click-through #25), one sentence per flagged bill with its stored match line.
+ */
+export function payAnywayWarning(bills: readonly Pick<Bill, "number" | "matchIssues">[]): string | null {
+  const flagged = bills.filter((b) => b.matchIssues.length > 0);
+  if (flagged.length === 0) return null;
+  const lines = flagged.map((b) => `Bill ${b.number} differs from the goods received: ${b.matchIssues.join(" ")}`);
+  return `${lines.join(" ")} Pay anyway?`;
+}
+
+/**
  * Pay a supplier (spec D3, mirroring Appendix A): pick the open bills, the amount (partial is
  * fine; it goes to the oldest due first), method, reference and mandatory proof. With approval on,
- * a second person confirms it before the bills count as paid.
+ * a second person confirms it before the bills count as paid. A bill flagged as differing from
+ * the goods received needs "Pay anyway" ticked before Save.
  */
 export function SupplierPaymentSheet({
   supplier,
@@ -59,6 +73,8 @@ export function SupplierPaymentSheet({
   const [reference, setReference] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [pending, setPending] = useState(false);
+  const [payAnyway, setPayAnyway] = useState(false);
+  const warning = payAnywayWarning(chosen);
   const split = allocate(/^\d+(\.\d{1,2})?$/.test(amount) ? amount : "0", chosen);
 
   async function submit(event?: FormEvent) {
@@ -159,13 +175,25 @@ export function SupplierPaymentSheet({
               onChange={setFiles}
               message={files.length ? undefined : NO_FILE}
             />
+            {warning ? (
+              <div role="alert" className="bg-warning/12 flex flex-col gap-2 rounded-md px-3 py-2 text-sm">
+                <p className="text-warning-ink">{warning}</p>
+                <label className="flex items-center gap-2 font-medium">
+                  <Checkbox checked={payAnyway} onCheckedChange={(v) => setPayAnyway(v === true)} />
+                  Pay anyway
+                </label>
+              </div>
+            ) : null}
           </div>
           <SheetFooter className="mt-auto">
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={onClose}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={pending || files.length === 0 || picked.length === 0}>
+              <Button
+                type="submit"
+                disabled={pending || files.length === 0 || picked.length === 0 || (!!warning && !payAnyway)}
+              >
                 Save payment
               </Button>
             </div>
