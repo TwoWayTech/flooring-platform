@@ -4,7 +4,9 @@ import { defineConfig, devices } from "@playwright/test";
 
 /**
  * Browser tests of the real sign-in (P8): a web build made with NEXT_PUBLIC_DATA_SOURCE=api,
- * apps/api, and the local PostgreSQL with Summit seeded. First build both apps
+ * apps/api, and the local PostgreSQL with Summit seeded (and, being local, the HR Suite company Harbor
+ * Staffing Co. and a platform admin, ADR 0065; hr-suite.spec.ts signs Harbor's Owner in on the HR host).
+ * First build both apps
  * (`NEXT_PUBLIC_DATA_SOURCE=api pnpm --filter web build` and `pnpm --filter api build`) and run
  * `pnpm db:seed` with SEED_USER_PASSWORD set; then `pnpm --filter web test:e2e:api`. The tests
  * sign in with SEED_USER_PASSWORD, and global-setup.ts resets the seeded accounts' MFA first. Local values come from the root .env and .env.local when they

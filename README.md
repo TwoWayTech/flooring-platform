@@ -10,7 +10,7 @@ Prerequisites: Node 22 or newer, pnpm 10 (`corepack enable`), Docker Desktop.
 ```sh
 pnpm install
 docker compose up -d   # PostgreSQL 16 on localhost:5432
-pnpm db:seed           # control database + Summit Floor Co. with its own database
+pnpm db:seed           # control database + Summit Floor Co.; locally also Harbor Staffing Co. (HR Suite) and a platform admin
 pnpm dev:api           # API on http://localhost:4000 (health: /health, docs: /docs)
 pnpm dev               # web on http://localhost:3000 (demo mode by default)
 ```
