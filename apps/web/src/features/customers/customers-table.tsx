@@ -7,6 +7,7 @@ import {
   customerReceivable,
   daysBetween,
   locationName,
+  overCreditLimit,
   PAYMENT_TERM_LABELS,
   SENSITIVE,
   type Customer,
@@ -16,6 +17,7 @@ import {
   defaultAddress,
 } from "@workspace/shared";
 import { Label } from "@workspace/ui/components/label";
+import { Num } from "@workspace/ui/components/num";
 import { Switch } from "@workspace/ui/components/switch";
 import { StatusPill } from "@workspace/ui/components/status-pill";
 import { DataTable } from "@/components/data-table/data-table";
@@ -35,7 +37,8 @@ const TYPES: Record<CustomerType, string> = { homeowner: "Homeowner", dealer: "D
  * Customers and receivables (spec Tier 2, B5): Current, Overdue and Due in the next 7 days above a
  * simple list of who owes what: open balance, overdue amount, oldest days overdue, next due date and
  * last payment, filterable by type, warehouse, salesperson, or overdue only. Credit limit needs
- * view_sensitive; the detailed aging is in Reports.
+ * view_sensitive, and so do the "Over credit limit" badge and filter (click-through #18). The
+ * detailed aging is in Reports.
  */
 export function CustomersTable({
   customers,
@@ -53,6 +56,7 @@ export function CustomersTable({
   const linked = customers.find((c) => c.id === params.get("customer")) ?? null;
   const [open, setOpen] = useState<Customer | null>(linked);
   const [overdueOnly, setOverdueOnly] = useState(false);
+  const [overLimitOnly, setOverLimitOnly] = useState(false);
   const formatDate = useFormatDate();
   const today = api.today();
   const daysLeft = (c: Customer) => (c.certificate ? daysBetween(today, c.certificate.expiresAt) : null);
@@ -66,7 +70,13 @@ export function CustomersTable({
   const latest = (c: Customer) =>
     sales.invoices.filter((i) => i.customerId === c.id).sort((a, b) => b.issuedAt.localeCompare(a.issuedAt))[0];
   const date = (iso: string | null) => (iso ? formatDate(iso) : <span className="text-muted-foreground">None</span>);
-  const rows = overdueOnly ? customers.filter((c) => owes(c).overdue !== "0.00") : customers;
+  // The credit limit is sensitive (CLAUDE.md rule 5): only people who see it see the warning.
+  const seesLimit = can(SENSITIVE.creditLimit);
+  const overLimit = (c: Customer) => seesLimit && overCreditLimit(owes(c).open, c.creditLimit);
+  const overLimitCount = customers.filter(overLimit).length;
+  const rows = customers.filter(
+    (c) => (!overdueOnly || owes(c).overdue !== "0.00") && (!overLimitOnly || overLimit(c)),
+  );
 
   const columns: ColumnSpec<Customer>[] = [
     {
@@ -78,6 +88,7 @@ export function CustomersTable({
           <span className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{c.name}</span>
             <IncompleteBadge customer={c} />
+            {overLimit(c) ? <StatusPill tone="danger" icon={CircleAlert} label="Over credit limit" /> : null}
           </span>
           <span className="text-muted-foreground text-xs">{c.contactName !== c.name ? c.contactName : c.email}</span>
         </span>
@@ -93,7 +104,7 @@ export function CustomersTable({
       },
     },
     { id: "terms", header: "Terms", value: (c) => PAYMENT_TERM_LABELS[c.terms], hidden: true },
-    ...(can(SENSITIVE.creditLimit)
+    ...(seesLimit
       ? [{ id: "credit", header: "Credit limit", kind: "money" as const, value: (c: Customer) => c.creditLimit }]
       : []),
     { id: "open", header: "Open balance", kind: "money", value: (c) => owes(c).open, total: true },
@@ -130,9 +141,19 @@ export function CustomersTable({
   return (
     <>
       <ReceivablesSummary invoices={sales.invoices} ledgers={sales.ledgers} />
-      <div className="flex items-center gap-2">
-        <Switch id="customers-overdue-only" checked={overdueOnly} onCheckedChange={setOverdueOnly} />
-        <Label htmlFor="customers-overdue-only">Overdue only</Label>
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        <div className="flex items-center gap-2">
+          <Switch id="customers-overdue-only" checked={overdueOnly} onCheckedChange={setOverdueOnly} />
+          <Label htmlFor="customers-overdue-only">Overdue only</Label>
+        </div>
+        {seesLimit ? (
+          <div className="flex items-center gap-2">
+            <Switch id="customers-over-limit-only" checked={overLimitOnly} onCheckedChange={setOverLimitOnly} />
+            <Label htmlFor="customers-over-limit-only">
+              Over credit limit only (<Num kind="count" value={String(overLimitCount)} />)
+            </Label>
+          </div>
+        ) : null}
       </div>
       <DataTable
         id="sales-customers"

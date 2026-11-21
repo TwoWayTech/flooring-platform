@@ -35,11 +35,15 @@ test.describe("customer payments (spec Appendix A)", () => {
       sheet(page).getByText("Attach the receipt, bank confirmation or check photo to continue.").first(),
     ).toBeVisible();
 
+    // A file that only pretends to be a PDF is refused when it is picked, not on Save (click-through #12).
     await sheet(page).locator("input[type=file]").setInputFiles(FAKE);
-    await save.click();
-    await expect(page.getByText("fake.pdf is not a PDF, JPG, PNG, WebP or HEIC file.")).toBeVisible();
-    await sheet(page).getByRole("button", { name: "Remove fake.pdf" }).click();
+    await expect(
+      sheet(page).getByText("fake.pdf is not a PDF, JPG, PNG, WebP or HEIC file. It was not attached."),
+    ).toBeVisible();
+    await expect(sheet(page).getByRole("button", { name: "Remove fake.pdf" })).toHaveCount(0);
+    await expect(save).toBeDisabled();
     await sheet(page).locator("input[type=file]").setInputFiles(PDF);
+    await expect(sheet(page).getByText(/It was not attached/)).toHaveCount(0);
     await expect(sheet(page).getByRole("region", { name: "Payment summary" })).toContainText("$6,882.28");
     await save.click();
     await expect(page.getByText(/waits for verification/)).toBeVisible();

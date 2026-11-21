@@ -42,6 +42,8 @@ import { Textarea } from "@workspace/ui/components/textarea";
 import { Field } from "@/components/field";
 import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
+import { retryToast } from "@/lib/api/retry";
+import { balanceAfterLabel } from "./payment-words";
 import { ProofFilesField } from "./proof-files-field";
 
 /** The fields in the order the form shows them, for focusing the first error. */
@@ -172,9 +174,10 @@ export function RecordPaymentSheet({
       );
       onClose();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "The payment was not saved.", {
-        action: { label: "Try again", onClick: () => void submit() },
-      });
+      toast.error(
+        error instanceof Error ? error.message : "The payment was not saved.",
+        retryToast(error, () => void submit()),
+      );
     } finally {
       setPending(false);
     }
@@ -350,7 +353,7 @@ export function RecordPaymentSheet({
                 <SummaryRow label="Invoice total" value={ledger.total} />
                 <SummaryRow label="Already paid" value={ledger.paid} />
                 <SummaryRow label="This payment" value={amount} />
-                <SummaryRow label="Balance after" value={after.balance} strong />
+                <SummaryRow label={balanceAfterLabel(waits)} value={after.balance} strong />
                 <div className="flex items-baseline justify-between gap-4">
                   <dt className="text-muted-foreground">Status after</dt>
                   <dd className="font-medium">{INVOICE_STATUS_LABELS[invoiceStatus(statusAfter).main]}</dd>

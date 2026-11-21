@@ -6,6 +6,7 @@ import { PackageCheck, Scissors } from "lucide-react";
 import { toast } from "sonner";
 import {
   dec,
+  formatNumber,
   isShort,
   locationName,
   mayIssue,
@@ -20,13 +21,16 @@ import {
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Num } from "@workspace/ui/components/num";
+import { useNumberSettings } from "@workspace/ui/components/number-settings";
 import { CartonHint } from "@/components/quantity/carton-hint";
 import { Panel } from "@workspace/ui/components/panel";
 import { StatusPill } from "@workspace/ui/components/status-pill";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ReasonDialog } from "@/components/reason-dialog";
 import { ScrollRegion } from "@/components/scroll-region";
 import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
+import { stockIssueWords } from "./stock-issue-words";
 
 /**
  * The stock an invoice holds (spec C2): per line, the roll length or area reserved at its
@@ -49,19 +53,28 @@ export function InvoiceStock({
   locations: Location[];
 }) {
   const can = useCan();
+  const numbers = useNumberSettings();
   const [overriding, setOverriding] = useState<Reservation | null>(null);
+  const [confirming, setConfirming] = useState<Reservation | null>(null);
   const own = reservations.filter((r) => r.invoiceId === invoice.id);
   if (own.length === 0) return null;
   const paid = mayIssue(ledger);
   const canCut = can("inventory.roll.cut");
   const canOverride = can("inventory.reservation.override");
+  const unitOf = (r: Reservation) => {
+    const product = products.find((p) => p.id === r.productId);
+    return STOCK_UNIT_LABELS[(product && stockUnit(product)) || "each"];
+  };
+  const wordsFor = (r: Reservation) =>
+    stockIssueWords({
+      quantity: formatNumber(r.quantity, "quantity", numbers),
+      unit: r.rollId ? "ft" : unitOf(r),
+      rollNumber: r.rollId ? (rolls.find((x) => x.id === r.rollId)?.rollNumber ?? null) : null,
+      invoiceNumber: invoice.number,
+    });
 
   const issue = (r: Reservation, reason?: string) =>
-    api
-      .issueReservation(r.id, reason)
-      .then(() =>
-        toast.success(r.rollId ? `Cut ${r.quantity} ft for ${invoice.number}` : `Issued for ${invoice.number}`),
-      );
+    api.issueReservation(r.id, reason).then(() => toast.success(wordsFor(r).done));
 
   return (
     <Panel title="Stock">
@@ -133,15 +146,7 @@ export function InvoiceStock({
                   <td className="py-2 text-right">
                     {r.status === "active" && dec(r.quantity).gt(0) && canCut ? (
                       paid ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            void issue(r).catch((e: unknown) =>
-                              toast.error(e instanceof Error ? e.message : "Not saved."),
-                            )
-                          }
-                        >
+                        <Button size="sm" variant="outline" onClick={() => setConfirming(r)}>
                           <Scissors />
                           {r.rollId ? "Cut" : "Issue"}
                         </Button>
@@ -165,6 +170,15 @@ export function InvoiceStock({
           confirmLabel={overriding.rollId ? "Cut now" : "Issue now"}
           onConfirm={(reason) => issue(overriding, reason)}
           onClose={() => setOverriding(null)}
+        />
+      ) : null}
+      {confirming ? (
+        <ConfirmDialog
+          title={wordsFor(confirming).title}
+          description={wordsFor(confirming).description}
+          confirmLabel={wordsFor(confirming).confirmLabel}
+          onConfirm={() => issue(confirming)}
+          onClose={() => setConfirming(null)}
         />
       ) : null}
     </Panel>

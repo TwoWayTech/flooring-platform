@@ -32,7 +32,15 @@ test.describe("inventory linked to invoices (spec C1, C2, C3)", () => {
     await sheet.getByLabel("Reference or transaction ID").fill("ACH-STOCK-1");
     await sheet.locator("input[type=file]").setInputFiles(PDF);
     await sheet.getByRole("button", { name: "Save payment" }).click();
+    // A cut can't be undone, so it asks first, naming the length and the roll (click-through #17).
     await stock.getByRole("button", { name: "Cut", exact: true }).click();
+    const confirm = page.getByRole("dialog", { name: /^Cut 85\.00 ft from roll / });
+    await expect(confirm).toContainText("can't be undone");
+    await confirm.getByRole("button", { name: "Cancel" }).click();
+    await expect(stock.getByText("Reserved", { exact: true })).toBeVisible();
+    await stock.getByRole("button", { name: "Cut", exact: true }).click();
+    await confirm.getByRole("button", { name: "Cut 85.00 ft" }).click();
+    await expect(page.getByText(/^Cut 85\.00 ft from roll .+ for INV-\d+$/)).toBeVisible();
     await expect(stock.getByText("Cut", { exact: true })).toBeVisible();
 
     await page.goto("/inventory/rolls/sm-roll-0004");

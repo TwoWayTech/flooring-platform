@@ -27,6 +27,7 @@ import {
 } from "@workspace/ui/components/sheet";
 import { Field } from "@/components/field";
 import { api } from "@/lib/api";
+import { retryToast } from "@/lib/api/retry";
 import { ProofFilesField } from "@/features/invoices/payments/proof-files-field";
 import { useFormatDate } from "@/lib/use-format-date";
 
@@ -76,9 +77,10 @@ export function SupplierPaymentSheet({
       );
       onClose();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "The payment was not saved.", {
-        action: { label: "Try again", onClick: () => void submit() },
-      });
+      toast.error(
+        e instanceof Error ? e.message : "The payment was not saved.",
+        retryToast(e, () => void submit()),
+      );
     } finally {
       setPending(false);
     }

@@ -526,6 +526,7 @@ A credit note is an `Invoice` with `isReturn: true`.
 | `issuedAt` | date | |
 | `dueAt` | date or null | Null only while a deposit job waits for installation, which needs the removed feature |
 | `createdBy` | user id | |
+| `createdAt` | minute (`2026-11-21T14:03`, UTC on the API) or absent | Orders a customer statement's lines of one day by time (click-through #19); older demo records have none |
 | `sentAt`, `sentBy` | date or null, user id or null | |
 | `voidedAt`, `voidReason` | date or null, string or null | |
 | `depositPct` | decimal string | |
