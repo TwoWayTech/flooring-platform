@@ -19,6 +19,7 @@ import {
   type Invoice,
 } from "@workspace/shared";
 import { nextCode, totpCode } from "../accounts";
+import { auditTime } from "../flows/checks";
 import { assertThrowawayDb, checkOnly } from "./opt-in";
 
 /** Leftovers of killed runs older than this are retired before a run starts (ADR 0058, S-8). */
@@ -154,9 +155,9 @@ test.describe("a fresh company end to end, with its gaps (whole-product check FC
       expect(audit.map((entry) => [entry.action, entry.target, entry.actorName, entry.actorRole])).toEqual([
         ["Added supplier", supplierName, OWNER_NAME, "Owner"],
       ]);
-      // `at` is the UTC minute with no zone mark (audit-log.service.ts), so it is read as UTC and
+      // `at` is an ISO instant with its zone mark (ADR 0064), read as one and
       // compared with the run's start cut to its minute.
-      expect(Date.parse(`${audit[0].at}Z`)).toBeGreaterThanOrEqual(Math.floor(state.startedAt / 60_000) * 60_000);
+      expect(auditTime(audit[0].at)).toBeGreaterThanOrEqual(Math.floor(state.startedAt / 60_000) * 60_000);
     });
 
     await test.step("FC-4: a customers file is checked, imported after a step-up through the proxy, and undone", async () => {

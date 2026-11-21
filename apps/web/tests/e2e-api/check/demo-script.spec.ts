@@ -22,7 +22,7 @@ import {
 import type { CommissionData, StockHold } from "@/lib/api/contract";
 import { strippableNames } from "../../../../api/test/support/strippable";
 import { ACCOUNTANT_EMAIL, EMPLOYEE_EMAIL, HR_EMAIL, OWNER_EMAIL, SALES_EMAIL, WAREHOUSE_EMAIL } from "../accounts";
-import { openBusinessReport, openMyPortal, postAs, readAs } from "../flows/checks";
+import { auditTime, openBusinessReport, openMyPortal, postAs, readAs } from "../flows/checks";
 import { choose, companyToday, flowTest, runId, waitForAnswer, type Persona } from "../flows/kit";
 import { assertThrowawayDb, checkOnly } from "./opt-in";
 import {
@@ -271,11 +271,9 @@ flowTest.describe("the demo script on Summit in api mode (whole-product check DS
 
       await flowTest.step("DS-19: the audit log holds the walk's credit note", async () => {
         const audit = await openScreen<AuditEntry[]>(dana, "/settings/audit", /^\/api-proxy\/audit$/);
-        // `at` is the UTC minute with no zone mark (finding F-r), so it is read as UTC.
+        // `at` is an ISO instant with its zone mark (ADR 0064; it was the UTC minute, finding F-r).
         const since = Math.floor(startedAt / 60_000) * 60_000;
-        const ours = audit.filter(
-          (entry) => entry.action === "Issued credit note" && Date.parse(`${entry.at}Z`) >= since,
-        );
+        const ours = audit.filter((entry) => entry.action === "Issued credit note" && auditTime(entry.at) >= since);
         expect(ours.length, "the walk's two credit notes are audited").toBeGreaterThanOrEqual(2);
         await expect(page.getByText("Issued credit note").first()).toBeVisible();
       });

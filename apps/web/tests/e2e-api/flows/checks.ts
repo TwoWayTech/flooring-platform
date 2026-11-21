@@ -270,9 +270,13 @@ export async function savePayment(
   return payment;
 }
 
-/** The audit log shows `at` to the minute, in UTC ("2026-11-16T09:30"). */
-function auditTime(at: string): number {
-  return Date.parse(`${at}:00Z`);
+/**
+ * The instant of an audit entry's `at`, in milliseconds. The API sends an ISO instant with its `Z`
+ * mark ("2026-11-16T09:30:00.000Z", ADR 0064); before, it sent the UTC minute with no mark
+ * ("2026-11-16T09:30"), which is still read as UTC.
+ */
+export function auditTime(at: string): number {
+  return /(Z|[+-]\d{2}:\d{2})$/.test(at) ? Date.parse(at) : Date.parse(`${at.slice(0, 16)}:00Z`);
 }
 
 /** The audit entries `actor` made with `action` from `since`'s minute on, read through the API as `request`'s person. */
