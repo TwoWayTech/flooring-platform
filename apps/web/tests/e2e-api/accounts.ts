@@ -119,6 +119,17 @@ export async function signInAndEnrolOwner(page: Page): Promise<string> {
  * authenticator: global-setup.ts or the spec's own reset clears it.
  */
 export async function signInAndEnrol(page: Page, email: string): Promise<string> {
+  const secret = await enrolAtSignIn(page, email);
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+  return secret;
+}
+
+/**
+ * The sign-in and MFA set-up steps of `signInAndEnrol`, without waiting for the app shell: for an
+ * account whose first screen after set-up is not the shell, such as the seeded platform admin
+ * (platform-seeded-admin.spec.ts). Returns the authenticator app's setup key.
+ */
+export async function enrolAtSignIn(page: Page, email: string): Promise<string> {
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(seedPassword());
@@ -131,6 +142,5 @@ export async function signInAndEnrol(page: Page, email: string): Promise<string>
   await page.getByRole("button", { name: "Turn on two-step sign-in" }).click();
   await page.getByLabel("I have saved my backup codes").check();
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
   return secret;
 }

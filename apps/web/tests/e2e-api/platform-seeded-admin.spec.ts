@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { resetAuthState } from "@workspace/db/testing";
-import { PLATFORM_ADMIN_EMAIL, signInAndEnrol } from "./accounts";
+import { enrolAtSignIn, PLATFORM_ADMIN_EMAIL } from "./accounts";
 
 /** The control database the API uses (global-setup.ts checks it is set). */
 const CONTROL_URL = process.env.CONTROL_DATABASE_URL ?? "";
@@ -17,7 +17,11 @@ test.describe("seeded platform admin (api mode)", () => {
   test("signs in through Summit, enrols an authenticator and lists both seeded companies in /admin", async ({
     page,
   }) => {
-    await signInAndEnrol(page, PLATFORM_ADMIN_EMAIL);
+    await enrolAtSignIn(page, PLATFORM_ADMIN_EMAIL);
+    // The company screens still match a signed-in person to Summit's demo fixtures by email
+    // (lib/session/api-context.ts, until Settings → Users is on the API), and the admin is not one of
+    // Summit's demo people, so sign-in ends on the "no profile" screen. /admin asks the API instead.
+    await expect(page.getByText("Your account is ready, but not this workspace.")).toBeVisible();
     await page.goto("/admin");
     await expect(page.getByRole("heading", { name: "Companies" })).toBeVisible();
     await expect(page.getByRole("row", { name: /Summit Floor Co\./ })).toBeVisible();
