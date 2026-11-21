@@ -4,7 +4,9 @@ import { Trash2 } from "lucide-react";
 import {
   lineAmount,
   quantityKind,
+  sameOptionalDecimal,
   stockUnit,
+  trimmedDecimal,
   TAX_CATEGORY_LABELS,
   UNIT_LABELS,
   UNIT_SINGULAR,
@@ -18,6 +20,7 @@ import {
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { Num } from "@workspace/ui/components/num";
+import { cn } from "@workspace/ui/lib/utils";
 import { LineStock } from "./line-stock";
 import { ProductPicker } from "./product-picker";
 import { RollPicker, type RollStock } from "./roll-picker";
@@ -104,24 +107,34 @@ export function LinesEditor({
   return (
     <div className="flex flex-col gap-3">
       <ScrollRegion label="Quote lines">
-        <table className="w-full min-w-[34rem] text-sm">
+        {/* Fixed layout: the numeric columns keep narrow set widths and Item takes the rest, at
+            least 10rem, so its name wraps only when it must (click-through finding #6). */}
+        <table className={cn("w-full table-fixed text-sm", showWaste ? "min-w-[35rem]" : "min-w-[29.5rem]")}>
+          <colgroup>
+            <col />
+            <col className="w-[6.5rem]" />
+            {showWaste ? <col className="w-[5.5rem]" /> : null}
+            <col className="w-[5rem]" />
+            <col className="w-[5.5rem]" />
+            <col className="w-10" />
+          </colgroup>
           <thead className="text-muted-foreground text-xs">
             <tr className="border-hairline border-b">
               <th scope="col" className="h-9 pr-3 text-left font-medium">
                 Item
               </th>
-              <th scope="col" className="px-3 text-right font-medium">
+              <th scope="col" className="px-2 text-right font-medium">
                 Quantity
               </th>
               {showWaste ? (
-                <th scope="col" className="px-3 text-right font-medium">
-                  Waste
+                <th scope="col" className="px-2 text-right font-medium">
+                  Waste %
                 </th>
               ) : null}
-              <th scope="col" className="px-3 text-right font-medium">
+              <th scope="col" className="px-2 text-right font-medium">
                 Price
               </th>
-              <th scope="col" className="px-3 text-right font-medium">
+              <th scope="col" className="px-2 text-right font-medium">
                 Amount
               </th>
               <th scope="col" className="w-10">
@@ -136,9 +149,9 @@ export function LinesEditor({
               const taxable = totals.lines.find((t) => t.id === line.id)?.taxable;
               return (
                 <tr key={line.id} className="border-hairline border-b align-top">
-                  <td className="py-2 pr-3">
+                  <td className="py-2 pr-3 break-words">
                     <span className="block font-medium">{line.description}</span>
-                    <span className="text-muted-foreground text-xs">
+                    <span className="text-muted-foreground block text-xs">
                       {TAX_CATEGORY_LABELS[line.category]}
                       {taxable ? ", taxed" : ", not taxed"}
                       {linked ? `, from ${linked}` : ""}
@@ -159,49 +172,48 @@ export function LinesEditor({
                       />
                     ) : null}
                   </td>
-                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                  <td className="px-2 py-2 text-right">
                     {linked || !editable ? (
                       <Num kind={quantityKind(line.unit)} value={line.quantity} unit={UNIT_LABELS[line.unit]} />
                     ) : (
-                      <span className="inline-flex items-center gap-1.5">
+                      <>
                         <AreaQuantityInput
                           aria-label={`${line.description} quantity`}
                           value={line.quantity}
                           sqFtPerCarton={line.sqFtPerCarton}
                           onChange={(quantity) => onChange({ ...line, quantity })}
-                          className="h-8 w-24 text-right tabular-nums"
+                          className="h-8 w-full max-w-24 text-right tabular-nums"
                         />
-                        <span className="text-muted-foreground text-xs">{UNIT_LABELS[line.unit]}</span>
-                      </span>
+                        <span className="text-muted-foreground block text-xs">{UNIT_LABELS[line.unit]}</span>
+                      </>
                     )}
-                    <CartonHint quantity={line.quantity} sqFtPerCarton={line.sqFtPerCarton} className="block" />
+                    <CartonHint quantity={line.quantity} sqFtPerCarton={line.sqFtPerCarton} compact className="block" />
                   </td>
                   {showWaste ? (
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-2 py-2 text-right">
                       {line.category === "material" && line.unit !== "each" && editable ? (
-                        <span className="inline-flex items-center gap-1">
-                          <Input
-                            aria-label={`${line.description} waste percent`}
-                            inputMode="decimal"
-                            defaultValue={line.wastePct ?? "0"}
-                            key={line.wastePct}
-                            onBlur={(e) =>
-                              onChange({ ...line, wastePct: e.target.value.replace(/[^\d.]/g, "") || "0" })
-                            }
-                            className="h-8 w-14 text-right tabular-nums"
-                          />
-                          <span className="text-muted-foreground text-xs">%</span>
-                        </span>
+                        <Input
+                          aria-label={`${line.description} waste percent`}
+                          inputMode="decimal"
+                          defaultValue={trimmedDecimal(line.wastePct ?? "0")}
+                          key={line.wastePct}
+                          onBlur={(e) => {
+                            const typed = e.target.value.replace(/[^\d.]/g, "") || "0";
+                            if (!sameOptionalDecimal(typed, line.wastePct ?? "0"))
+                              onChange({ ...line, wastePct: typed });
+                          }}
+                          className="h-8 w-full max-w-[4.5rem] text-right tabular-nums"
+                        />
                       ) : line.wastePct ? (
                         <Num kind="percent" value={line.wastePct} />
                       ) : null}
                     </td>
                   ) : null}
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-2 py-2 text-right">
                     <Num kind="money" value={line.unitPrice} />
                     <span className="text-muted-foreground block text-xs">per {UNIT_SINGULAR[line.unit]}</span>
                   </td>
-                  <td className="px-3 py-2 text-right font-medium">
+                  <td className="px-2 py-2 text-right font-medium">
                     <Num kind="money" value={lineAmount(line)} />
                   </td>
                   <td className="py-1.5 text-right">

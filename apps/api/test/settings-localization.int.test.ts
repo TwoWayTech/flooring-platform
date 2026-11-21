@@ -556,10 +556,12 @@ describe("settings part 2a on the API: Sales and documents and Payroll rules (ne
     // 5. An invoice from a sent and accepted quote takes the invoice prefix.
     const quote = await quoteOf(doc.owner, ownersCustomer.id, "10");
     expect(quote.status, JSON.stringify(quote.body)).toBe(201);
-    await call("post", `/quotes/${quote.body.id}/status`, doc.owner.cookie)
+    const sentQuote = await call("post", `/quotes/${quote.body.id}/status`, doc.owner.cookie)
       .send({ action: "send", expiresAt: "2099-01-01" })
       .expect(201);
-    await call("post", `/quotes/${quote.body.id}/status`, doc.owner.cookie).send({ action: "accept" }).expect(201);
+    await call("post", `/quotes/${quote.body.id}/status`, doc.owner.cookie)
+      .send({ action: "accept", expectedTotal: sentQuote.body.total })
+      .expect(201);
     const invoice = await call("post", `/quotes/${quote.body.id}/invoice`, doc.owner.cookie);
     expect(invoice.status, JSON.stringify(invoice.body)).toBe(201);
     expect(invoice.body.number).toMatch(/^IZ-/);

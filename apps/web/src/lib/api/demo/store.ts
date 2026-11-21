@@ -14,7 +14,12 @@ import {
   nextNumber,
   dateShift,
   isDefaultRoleKey,
+  acceptsShownTotal,
   keepsAcceptedTotal,
+  QUOTE_CHANGED_MESSAGE,
+  repricesAcceptedQuote,
+  REPRICED_QUOTE_ACTION,
+  savedQuoteStatus,
   permissionsForModules,
   featureOn,
   type FeatureKey,
@@ -1218,15 +1223,17 @@ export class DemoStore implements ApiClient {
     });
     const cartons = partCartonProblem(packed, "sell");
     if (cartons) throw new DemoRuleError(cartons);
-    // Status, sending and conversion change only through their own calls (spec B1).
+    // Status, sending and conversion change only through their own calls (spec B1), except that a
+    // repriced accepted quote goes back to Pending for the customer to accept the new total, as on
+    // the API (ADR 0061, decision 7). Otherwise it keeps the total the customer accepted (rule 18).
+    const repriced = repricesAcceptedQuote(before, input);
     const quote: Quote = {
       ...input,
       lines: packed,
-      status: before?.status ?? "draft",
+      status: savedQuoteStatus(before, input),
       sentAt: before?.sentAt ?? null,
       expiresAt: before?.expiresAt ?? null,
       invoiceId: before?.invoiceId ?? null,
-      // An accepted quote keeps the total the customer accepted unless the save reprices it (rule 18).
       total: before && keepsAcceptedTotal(before, input) ? before.total : input.total,
     };
     const taxChanged = JSON.stringify(before?.taxOverride ?? null) !== JSON.stringify(quote.taxOverride ?? null);
@@ -1254,6 +1261,15 @@ export class DemoStore implements ApiClient {
       before: null,
       after: `total ${saved.total}`,
     });
+    if (before && repriced) {
+      this.appendAudit(db, {
+        category: "data",
+        action: REPRICED_QUOTE_ACTION,
+        target: saved.number,
+        before: `Accepted, total ${before.total}`,
+        after: `Pending, total ${saved.total}`,
+      });
+    }
     if (taxChanged) {
       this.appendAudit(db, {
         category: "data",
@@ -1280,6 +1296,10 @@ export class DemoStore implements ApiClient {
     if (change.action === "send") {
       const problem = Object.values(quoteSendProblems(quote, expiresAt, today))[0];
       if (problem) throw new DemoRuleError(problem);
+    }
+    // The customer accepts the total they saw, as on the API (ADR 0061, decision 7).
+    if (change.action === "accept" && !acceptsShownTotal(quote, change.expectedTotal)) {
+      throw new DemoRuleError(QUOTE_CHANGED_MESSAGE);
     }
     const saved: Quote = {
       ...quote,

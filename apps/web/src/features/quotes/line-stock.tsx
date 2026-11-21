@@ -60,7 +60,7 @@ export function LineStock({
       <span className={short ? "text-warning-ink" : "text-muted-foreground"}>
         {short ? "Only " : "Available at "}
         {short ? <Num kind="quantity" value={available.toString()} unit={unit} /> : `${name}: `}
-        {short ? ` free at ${name}` : <Num kind="quantity" value={available.toString()} unit={unit} />}{" "}
+        {short ? ` available at ${name}` : <Num kind="quantity" value={available.toString()} unit={unit} />}{" "}
         <CartonHint quantity={available.toString()} sqFtPerCarton={product.sqFtPerCarton} compact />
       </span>
       {short || line.locationId ? (
@@ -80,7 +80,8 @@ export function LineStock({
               <SelectItem value={from}>Ship from {name}</SelectItem>
               {others.map((w) => (
                 <SelectItem key={w.location.id} value={w.location.id}>
-                  Ship from {w.location.name}, <Num kind="quantity" value={w.available.toString()} unit={unit} /> free
+                  Ship from {w.location.name}, <Num kind="quantity" value={w.available.toString()} unit={unit} />{" "}
+                  available
                 </SelectItem>
               ))}
             </SelectContent>

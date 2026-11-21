@@ -2,7 +2,9 @@ import { ConflictException, ForbiddenException, Inject, Injectable, Logger } fro
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import { addresses, customers, measurementRooms, quoteLines, quotes } from "@workspace/db/company";
 import {
+  acceptsShownTotal,
   computeTotals,
+  QUOTE_CHANGED_MESSAGE,
   dec,
   keepsAcceptedTotal,
   productTaxCategory,
@@ -14,8 +16,11 @@ import {
   quoteDraftProblem,
   quoteIsOpen,
   quoteSendProblems,
+  repricesAcceptedQuote,
+  REPRICED_QUOTE_ACTION,
   sameOptionalDecimal,
   savedQuoteLine,
+  savedQuoteStatus,
   taxContextFor,
   type Customer,
   type CustomerAddress,
@@ -322,15 +327,18 @@ export class SalesService {
         : asked && { ...asked, byName: actor.session.user.name, at: new Date().toISOString() };
       const day = await companyToday(this.control.db, tenant);
       const ctx = taxContextFor(localization, input.jobSite, customer, day, before?.lumpSum ?? false, taxOverride);
-      // An accepted quote keeps the total the customer accepted unless the save reprices it (rule 18).
+      // An accepted quote keeps the total the customer accepted unless the save reprices it; a
+      // repriced one goes back to Pending for the customer to accept the new total (rule 18; ADR 0061, 7).
       const next = {
         customerId: customer.id,
         jobSite: input.jobSite,
         taxOverride,
         lumpSum: before?.lumpSum ?? false,
+        depositPct: input.depositPct,
         lines,
       };
       const total = before && keepsAcceptedTotal(before, next) ? before.total : computeTotals(lines, ctx).total;
+      const repriced = repricesAcceptedQuote(before, next);
 
       const quoteId = before?.id ?? uuidv7();
       const values = {
@@ -347,7 +355,15 @@ export class SalesService {
       };
       let number = before?.number ?? "";
       if (before) {
-        await tx.update(quotes).set(values).where(eq(quotes.id, quoteId));
+        // Only from the status read above, so an accept, decline or conversion that commits
+        // meanwhile is never overwritten by this save, nor accepted at a total nobody agreed to.
+        const [saved] = await tx
+          .update(quotes)
+          .set({ ...values, status: savedQuoteStatus(before, next) })
+          .where(and(eq(quotes.id, quoteId), eq(quotes.status, before.status)))
+          .returning({ id: quotes.id });
+        if (!saved)
+          throw new ConflictException({ code: "quote_state", message: `Quote ${before.number} changed meanwhile.` });
       } else {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext('sales:quote-number'))`);
         const existing = await tx.select({ number: quotes.number }).from(quotes);
@@ -380,6 +396,22 @@ export class SalesService {
         },
         tx,
       );
+      if (before && repriced) {
+        await this.auditLog.record(
+          tenant,
+          actor.audit,
+          {
+            category: "data",
+            action: REPRICED_QUOTE_ACTION,
+            targetType: "quote",
+            targetId: quoteId,
+            targetLabel: number,
+            before: { status: before.status, total: before.total },
+            after: { status: "pending", total },
+          },
+          tx,
+        );
+      }
       if (taxChanged) {
         await this.auditLog.record(
           tenant,
@@ -401,14 +433,20 @@ export class SalesService {
     return (await loadQuotes(db, [id]))[0]!;
   }
 
-  /** Sends, accepts or declines a quote, as its state allows (spec "Quote status"). */
+  /**
+   * Sends, accepts or declines a quote, as its state allows (spec "Quote status"). An accept names
+   * the total the person saw and is refused with 409 `quote_changed` when the quote's total is
+   * another, checked again in the update itself so a reprice that commits meanwhile is caught too
+   * (owner decision 7 of 2026-11-21, ADR 0061).
+   */
   async updateQuoteStatus(
     tenant: TenantContext,
     actor: Actor,
     quoteId: string,
-    action: QuoteAction,
-    expiresAt: string | null | undefined,
+    change: { action: QuoteAction; expiresAt?: string | null; expectedTotal?: string },
   ): Promise<Quote> {
+    const { action, expiresAt } = change;
+    const changed = () => new ConflictException({ code: "quote_changed", message: QUOTE_CHANGED_MESSAGE });
     const db = await this.tenancy.db(tenant);
     const day = await companyToday(this.control.db, tenant);
     const updated = await db.transaction(async (tx) => {
@@ -425,6 +463,8 @@ export class SalesService {
         const problem = Object.values(quoteSendProblems(quote, expiry, day))[0];
         if (problem) throw refuse(problem);
       }
+      const accepting = action === "accept";
+      if (accepting && !acceptsShownTotal(quote, change.expectedTotal)) throw changed();
       const status = QUOTE_ACTION_STATUS[action];
       const total = action === "send" ? await this.priceOn(tx, quote, day) : quote.total;
       const [moved] = await tx
@@ -435,8 +475,16 @@ export class SalesService {
           expiresAt: expiry,
           sentAt: quote.sentAt ? undefined : action === "send" ? new Date() : undefined,
         })
-        .where(and(eq(quotes.id, quoteId), eq(quotes.status, quote.status)))
+        .where(
+          and(
+            eq(quotes.id, quoteId),
+            eq(quotes.status, quote.status),
+            // The total the person saw must still be the quote's when the accept is written.
+            accepting ? eq(quotes.total, quote.total) : undefined,
+          ),
+        )
         .returning({ id: quotes.id });
+      if (!moved && accepting) throw changed();
       if (!moved)
         throw new ConflictException({ code: "quote_state", message: `Quote ${quote.number} changed meanwhile.` });
       await this.auditLog.record(

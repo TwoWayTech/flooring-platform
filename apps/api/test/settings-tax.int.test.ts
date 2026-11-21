@@ -463,10 +463,12 @@ describe("settings part 3a on the API: Sales tax with versioned rules (needs the
 
   /** Sends and accepts a quote. */
   async function accept(id: string): Promise<void> {
-    await call("post", `/quotes/${id}/status`, tax.owner.cookie)
+    const sentQuote = await call("post", `/quotes/${id}/status`, tax.owner.cookie)
       .send({ action: "send", expiresAt: "2099-01-01" })
       .expect(201);
-    await call("post", `/quotes/${id}/status`, tax.owner.cookie).send({ action: "accept" }).expect(201);
+    await call("post", `/quotes/${id}/status`, tax.owner.cookie)
+      .send({ action: "accept", expectedTotal: sentQuote.body.total })
+      .expect(201);
   }
 
   /** Converts an accepted quote; answers the invoice. */
@@ -946,6 +948,8 @@ describe("settings part 3a on the API: Sales tax with versioned rules (needs the
     expect(more.status, JSON.stringify(more.body)).toBe(200);
     // 120 sq ft at 4.50 is 540.00; at 8.5 % that is 585.90.
     expect((more.body as Quote).total).toBe("585.90");
+    // A priced change sends it back to Pending; a notes-only save kept it Accepted (ADR 0061, 7).
+    expect([(notes.body as Quote).status, (more.body as Quote).status]).toEqual(["accepted", "pending"]);
     // A quote saved again takes the day's rule.
     const resaved = await call("put", `/quotes/${q1.id}`, tax.owner.cookie).send(quoteBody("CO"));
     expect(resaved.status, JSON.stringify(resaved.body)).toBe(200);

@@ -20,7 +20,7 @@ import { CATEGORY_LABELS } from "@workspace/shared";
 
 /**
  * A searchable list of products or services that adds the chosen one to the document. Each result
- * shows brand, SKU and price per unit, and, given stock and a warehouse, what is free there (spec
+ * shows brand, SKU and price per unit, and, given stock and a warehouse, what is available there (spec
  * A2), so two colorways with the same name cannot be confused (audit U-19).
  */
 export function ProductPicker({
@@ -85,8 +85,18 @@ export function ProductPicker({
                           </span>
                           {free ? (
                             <span className="block">
-                              <Num kind={p.unit === "each" ? "count" : "quantity"} value={free.toString()} /> free{" "}
-                              <CartonHint quantity={free.toString()} sqFtPerCarton={p.sqFtPerCarton} compact />
+                              <Num
+                                kind={p.unit === "each" ? "count" : "quantity"}
+                                value={free.toString()}
+                                unit={p.unit === "each" ? undefined : "sq ft"}
+                              />{" "}
+                              available
+                              {free.gt(0) ? (
+                                <>
+                                  {" "}
+                                  <CartonHint quantity={free.toString()} sqFtPerCarton={p.sqFtPerCarton} compact />
+                                </>
+                              ) : null}
                             </span>
                           ) : null}
                         </span>

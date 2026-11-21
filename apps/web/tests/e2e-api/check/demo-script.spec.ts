@@ -168,8 +168,15 @@ flowTest.describe("the demo script on Summit in api mode (whole-product check DS
           taxOverride: null,
           notes: "",
         });
-        await postAs<Quote>(dana.request, `/quotes/${quote.id}/status`, { action: "send", expiresAt: "2099-01-01" });
-        await postAs<Quote>(dana.request, `/quotes/${quote.id}/status`, { action: "accept" });
+        const sent = await postAs<Quote>(dana.request, `/quotes/${quote.id}/status`, {
+          action: "send",
+          expiresAt: "2099-01-01",
+        });
+        // Accepting names the total the customer saw (ADR 0061, decision 7).
+        await postAs<Quote>(dana.request, `/quotes/${quote.id}/status`, {
+          action: "accept",
+          expectedTotal: sent.total,
+        });
         const invoice = await postAs<Invoice>(dana.request, `/quotes/${quote.id}/invoice`);
         personas.onCleanup("credit the rest of the walk's invoice", () => creditTheRest(dana.request, invoice));
 

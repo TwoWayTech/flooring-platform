@@ -21,7 +21,9 @@ test.describe("square feet everywhere (spec A1)", () => {
     await quantity.fill("22c");
     await quantity.blur();
     await expect(quantity).toHaveValue("520.08");
-    await expect(page.getByText("≈ 22 cartons (23.64 sq ft each)")).toBeVisible();
+    // The Lines table keeps the hint short beside the quantity (click-through #6).
+    const cell = page.getByRole("cell").filter({ has: quantity });
+    await expect(cell.getByText(/^≈ 22 cartons$/)).toBeVisible();
     await quantity.fill("500");
     await quantity.blur();
     await expect(quantity).toHaveValue("520.08");

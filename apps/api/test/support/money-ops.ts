@@ -62,8 +62,8 @@ export async function quotedInvoice(run: MoneyRun, customerId: string, lines: re
     moneyCalls.quote(customerId, run.places.warehouses[0], lines),
     sales,
   );
-  await run.act(201, moneyCalls.quoteStatus(quote.id, "send"), sales);
-  await run.act(201, moneyCalls.quoteStatus(quote.id, "accept"), sales);
+  const sent = await run.act<{ total: string }>(201, moneyCalls.quoteSend(quote.id), sales);
+  await run.act(201, moneyCalls.quoteAccept(quote.id, sent.total), sales);
   const invoice = await run.act<Invoice>(201, moneyCalls.invoiceFromQuote(quote.id), sales);
   run.note("invoice");
   return invoice;

@@ -585,14 +585,21 @@ describe("sales part 1 (P11, needs the local PostgreSQL)", () => {
       .send(quoteBody(customer.body.id, warehouse, tile))
       .expect(201);
     expect(
-      (await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA).send({ action: "accept" })).body.code,
+      (
+        await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA).send({
+          action: "accept",
+          expectedTotal: quote.body.total,
+        })
+      ).body.code,
     ).toBe("quote_state");
     const sent = await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA)
       .send({ action: "send", expiresAt: "2099-01-01" })
       .expect(201);
     expect(sent.body).toMatchObject({ status: "pending", expiresAt: "2099-01-01" });
     expect(sent.body.sentAt).not.toBeNull();
-    await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA).send({ action: "accept" }).expect(201);
+    await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA)
+      .send({ action: "accept", expectedTotal: sent.body.total })
+      .expect(201);
     expect(
       (await call("post", `/quotes/${quote.body.id}/status`, cookies.salesB).send({ action: "decline" })).status,
     ).toBe(404);

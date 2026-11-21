@@ -235,10 +235,12 @@ describe("inventory part 2: issue and cut (P11, needs the local PostgreSQL)", ()
         notes: "",
       })
       .expect(201);
-    await call("post", `/quotes/${quote.body.id}/status`, cookies.sales)
+    const sentQuote = await call("post", `/quotes/${quote.body.id}/status`, cookies.sales)
       .send({ action: "send", expiresAt: "2099-01-01" })
       .expect(201);
-    await call("post", `/quotes/${quote.body.id}/status`, cookies.sales).send({ action: "accept" }).expect(201);
+    await call("post", `/quotes/${quote.body.id}/status`, cookies.sales)
+      .send({ action: "accept", expectedTotal: sentQuote.body.total })
+      .expect(201);
     return (await call("post", `/quotes/${quote.body.id}/invoice`, cookies.sales).expect(201)).body;
   }
 
