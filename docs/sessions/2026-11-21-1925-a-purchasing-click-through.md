@@ -13,7 +13,10 @@ Close click-through findings #20 to #25 (Purchasing in api mode at 1280 px), bra
 - Spec purchasing.md rules 21 and the receipt `note` row updated; blueprint-delta row added.
 
 ## Checks run
-See the PR body for the exact counts.
+- typecheck and lint (web, shared, api): pass; prettier check: pass
+- `pnpm --filter @workspace/shared test`: 1264 passed; `pnpm --filter web test`: 588 passed (coverage.md regenerated)
+- `pnpm --filter api test:api test/payables.int.test.ts --maxWorkers=1`: 18 passed
+- Playwright not run locally (shared laptop); CI's `e2e` runs the new specs.
 
 ## Open questions
 - Should a flagged bill instead wait for a review (a permission such as `purchasing.bill.approve`) before it can be paid? The spec is silent, so only the warning is built.
