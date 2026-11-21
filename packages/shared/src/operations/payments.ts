@@ -2,6 +2,7 @@ import { daysBetween } from "../dates";
 import { dec, moneyString } from "../money";
 import type { Invoice, Payment, PaymentMethod, PaymentSettings } from "../types";
 import type { InvoiceLedger } from "../ledger";
+import { nextNumber } from "./quotes";
 
 /** Payment methods as people say them (spec Appendix A "Record payment"). */
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
@@ -118,12 +119,7 @@ export function needsApproval(settings: PaymentSettings, amount: string): boolea
 
 /** The next payment number, four digits after the prefix: PAY-0001 (spec Appendix A). */
 export function nextPaymentNumber(prefix: string, existing: readonly string[]): string {
-  const highest = existing
-    .filter((n) => n.startsWith(prefix))
-    .map((n) => Number(n.slice(prefix.length)))
-    .filter(Number.isFinite)
-    .reduce((max, n) => Math.max(max, n), 0);
-  return `${prefix}${String(highest + 1).padStart(4, "0")}`;
+  return nextNumber(prefix, existing, 1, 4);
 }
 
 /** What the Update status menu offers (spec B2): only actions that fit the invoice now. */

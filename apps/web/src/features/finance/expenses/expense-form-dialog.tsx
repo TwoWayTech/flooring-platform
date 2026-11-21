@@ -23,6 +23,7 @@ import {
 } from "@workspace/ui/components/dialog";
 import { Input } from "@workspace/ui/components/input";
 import { Field } from "@/components/field";
+import { SearchPick } from "@/components/search-pick";
 import { Pick } from "@/features/hr/pick";
 import { ProofFilesField } from "@/features/invoices/payments/proof-files-field";
 import { api } from "@/lib/api";
@@ -108,10 +109,11 @@ export function ExpenseFormDialog({
               <Input id="exp-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             </Field>
             <Field id="exp-vendor" label="Vendor">
-              <Pick
+              <SearchPick
                 id="exp-vendor"
                 value={supplierId}
                 onChange={setSupplierId}
+                searchLabel="Search vendors"
                 options={vendors.map((s) => [s.id, s.name] as const)}
               />
             </Field>
@@ -125,10 +127,11 @@ export function ExpenseFormDialog({
             </Field>
             {salesTax ? null : (
               <Field id="exp-location" label="Location">
-                <Pick
+                <SearchPick
                   id="exp-location"
                   value={locationId}
                   onChange={setLocationId}
+                  searchLabel="Search locations"
                   options={[[COMPANY_WIDE, "Company-wide"], ...locations.map((l) => [l.id, l.name] as const)]}
                 />
               </Field>

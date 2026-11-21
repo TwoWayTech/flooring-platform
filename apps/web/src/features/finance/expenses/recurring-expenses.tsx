@@ -26,6 +26,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Switch } from "@workspace/ui/components/switch";
 import { Field } from "@/components/field";
 import { useCan } from "@/components/workspace/workspace-context";
+import { SearchPick } from "@/components/search-pick";
 import { Pick } from "@/features/hr/pick";
 import { api } from "@/lib/api";
 
@@ -94,10 +95,11 @@ function RecurringDialog({
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field id="rex-vendor" label="Vendor">
-              <Pick
+              <SearchPick
                 id="rex-vendor"
                 value={supplierId}
                 onChange={setSupplierId}
+                searchLabel="Search vendors"
                 options={vendors.map((s) => [s.id, s.name] as const)}
               />
             </Field>
@@ -110,10 +112,11 @@ function RecurringDialog({
               />
             </Field>
             <Field id="rex-location" label="Location">
-              <Pick
+              <SearchPick
                 id="rex-location"
                 value={locationId}
                 onChange={setLocationId}
+                searchLabel="Search locations"
                 options={[[COMPANY_WIDE, "Company-wide"], ...locations.map((l) => [l.id, l.name] as const)]}
               />
             </Field>

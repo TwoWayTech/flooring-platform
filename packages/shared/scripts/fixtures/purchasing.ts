@@ -256,7 +256,7 @@ const EXPENSE_SHARES: readonly [ExpenseCategory, string, number][] = [
   ["fuel_vehicles", "Van leases and fuel", 0.05],
   ["marketing", "Local advertising", 0.06],
   ["insurance", "General liability insurance", 0.03],
-  ["other", "Software subscriptions", 0.015],
+  ["internet_phone", "Internet and phone service", 0.015],
 ];
 
 /**

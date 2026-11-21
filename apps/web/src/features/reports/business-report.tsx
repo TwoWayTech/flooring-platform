@@ -7,12 +7,14 @@ import { toast } from "sonner";
 import {
   CATEGORY_LABELS,
   dec,
+  drillTotal,
   EXPENSE_CATEGORIES,
   EXPENSE_CATEGORY_LABELS,
   type BusinessFilters,
   type BusinessReport,
   type BusinessRow,
   type BusinessSection,
+  type DrillTotal,
   type ReportOptions,
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
@@ -88,6 +90,26 @@ function Bars({ section, onOpen }: { section: BusinessSection; onOpen: (row: Bus
         </li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * The total under a drill list (finding #40). When the records add up to the figure clicked it is
+ * just "Total"; otherwise it names what it adds and shows the figure beside it.
+ */
+function DrillTotalLine({ total }: { total: DrillTotal }) {
+  return (
+    <li className="border-foreground/20 flex flex-col gap-1 border-t-2 py-2 font-medium">
+      <span className="flex justify-between gap-3">
+        <span>{total.matches ? "Total" : "Total of the records listed"}</span>
+        <Num kind="money" value={total.total} />
+      </span>
+      {total.matches ? null : (
+        <span className="text-muted-foreground text-xs font-normal">
+          The figure clicked is <Num kind="money" value={total.figure} />: it is not simply the sum of these records.
+        </span>
+      )}
+    </li>
   );
 }
 
@@ -219,7 +241,7 @@ export function BusinessReportView({ options, onRefresh }: { options: ReportOpti
   const [expenseCategory, setExpenseCategory] = useState(ALL);
   const [salesRepId, setRep] = useState(ALL);
   const [supplierId, setSupplier] = useState(ALL);
-  const [drill, setDrill] = useState<{ title: string; row: BusinessRow } | null>(null);
+  const [drill, setDrill] = useState<{ title: string; row: BusinessRow; total: DrillTotal | null } | null>(null);
   // Custom dates the API would refuse (ADR 0055 S8) are explained beside the inputs and never sent:
   // the report stays on the last pair that worked, so a typo never wipes the figures.
   const range = preset === "custom" ? custom.applied : rangeFor(preset, today);
@@ -354,7 +376,7 @@ export function BusinessReportView({ options, onRefresh }: { options: ReportOpti
             <ReportSection
               key={section.key}
               section={section}
-              onOpen={(row) => setDrill({ title: section.title, row })}
+              onOpen={(row) => setDrill({ title: section.title, row, total: drillTotal(section, row) })}
             />
           ))}
         </div>
@@ -397,6 +419,7 @@ export function BusinessReportView({ options, onRefresh }: { options: ReportOpti
                     <Num kind="money" value={dec(r.amount).toString()} />
                   </li>
                 ))}
+                {drill.total ? <DrillTotalLine total={drill.total} /> : null}
               </ul>
             </>
           ) : null}

@@ -1,4 +1,5 @@
-import type { BusinessReport, BusinessRow, DrillRecord } from "../business-report";
+import type { BusinessReport, BusinessRow, BusinessSection, DrillRecord } from "../business-report";
+import { dec, sum } from "../money";
 
 /** The most drill records a row carries (ADR 0055 S8); the screen says how many there are in all. */
 export const DRILL_LIMIT = 200;
@@ -29,4 +30,31 @@ export function capDrillRecords(report: BusinessReport, limit = DRILL_LIMIT): Bu
       total: section.total ? capRow(section.total, limit) : null,
     })),
   };
+}
+
+/** The total line under a drill list (click-through finding #40). */
+export interface DrillTotal {
+  /** The sum of the records listed, a decimal string. */
+  total: string;
+  /** The figure that was clicked: the row's first money value. */
+  figure: string;
+  /** True when the list is whole and its sum is the figure, so the line can just say "Total". */
+  matches: boolean;
+}
+
+/**
+ * The total under a drill list (spec F2 drill-down; finding #40): the sum of the records and the
+ * figure the reader clicked, which is the row's value in the section's first money column
+ * (This period on the Summary, Revenue on Profit by location, Cost on the expense sections). Some
+ * figures are worked out from more than their records (operating expenses also count pay periods,
+ * a product category's revenue is only part of each whole invoice listed) and a list may be cut to
+ * the latest records, so `matches` says whether the two agree. Null for a row with no records.
+ */
+export function drillTotal(section: Pick<BusinessSection, "columns">, row: BusinessRow): DrillTotal | null {
+  if (row.records.length === 0 || row.kind === "percent") return null;
+  const column = section.columns.find((c) => c.kind === "money" && row.values[c.id]);
+  if (!column) return null;
+  const figure = row.values[column.id]!;
+  const total = sum(row.records.map((r) => r.amount));
+  return { total: total.toString(), figure, matches: row.recordCount === undefined && total.eq(dec(figure)) };
 }

@@ -41,6 +41,25 @@ test.describe("Finance → Expenses (spec F1)", () => {
     await expect(page.getByText("Draft saved")).toBeVisible();
   });
 
+  test("Vendor and Location pick by typing a name and pressing Enter (click-through #38)", async ({ page }) => {
+    await signInAs(page, GRACE, "/finance?view=expenses");
+    await page.getByRole("button", { name: "New expense" }).click();
+    const dialog = page.getByRole("dialog", { name: "New expense" });
+    const vendor = dialog.getByRole("combobox", { name: "Vendor" });
+    await vendor.focus();
+    await page.keyboard.type("tidewell");
+    await expect(page.getByRole("option", { name: "Tidewell Facility Services" })).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect(vendor).toHaveText("Tidewell Facility Services");
+    // A word inside the name finds it too.
+    const location = dialog.getByRole("combobox", { name: "Location" });
+    await location.focus();
+    await page.keyboard.type("showroom");
+    await page.keyboard.press("Enter");
+    await expect(location).toHaveText("Southgate Showroom");
+    await expect(page.getByRole("listbox")).toBeHidden();
+  });
+
   test("records an expense for a showroom with its receipt", async ({ page }) => {
     await signInAs(page, GRACE, "/finance?view=expenses");
     await page.getByRole("button", { name: "New expense" }).click();
@@ -156,8 +175,18 @@ test.describe("Business report (spec F2)", () => {
 
   test("drills from a figure to its records", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/reports");
-    await page.getByRole("button", { name: "Revenue", exact: true }).first().click();
-    await expect(page.getByRole("dialog").getByRole("link").first()).toBeVisible();
+    const revenue = page.getByRole("button", { name: "Revenue", exact: true }).first();
+    const figure = (
+      await page.getByRole("row").filter({ has: revenue }).first().getByRole("cell").first().innerText()
+    ).trim();
+    await revenue.click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("link").first()).toBeVisible();
+    // A total line under the records, equal to the figure clicked (click-through #40).
+    const total = dialog.getByRole("listitem").last();
+    await expect(total).toContainText(/^Total/);
+    await expect(total).not.toContainText("records listed");
+    await expect(total).toContainText(figure);
   });
 
   test("toggles a section between chart and table", async ({ page }) => {
