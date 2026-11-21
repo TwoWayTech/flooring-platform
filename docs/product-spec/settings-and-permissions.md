@@ -89,7 +89,7 @@ The table was generated from the source of `catalog.ts` and `roles.ts`, and it m
 | `sales.invoice.void` | core | Invoices | No | Own, Mgr, Acc |
 | `sales.invoice.export` | core | Invoices | No | Own, Mgr, Acc |
 | `sales.payment.view` | core | Customer payments | No | Own, Mgr, Acc, Sal |
-| `sales.payment.record` | core | Customer payments | No | Own, Mgr, Acc, Sal |
+| `sales.payment.record` | core | Customer payments | No | Own, Mgr, Acc (Sales views payments but does not record them, ADR 0061) |
 | `sales.payment.approve` | core | Customer payments | No | Own, Acc |
 | `sales.payment.void` | core | Customer payments | No | Own, Acc |
 | `sales.payment.refund` | core | Customer payments | No | Own, Acc |

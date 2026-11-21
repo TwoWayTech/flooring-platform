@@ -1,10 +1,19 @@
-import { monthlyPnl, salesByCategory, storedPnl } from "../analytics";
-import { withoutPayroll } from "../expenses";
-import { sum } from "../money";
+import { salesByCategory } from "../analytics";
+import { monthEnd } from "../dates";
+import { marginPct, moneyString, sum } from "../money";
 import type { NumberKind } from "../numbers";
 import { PAYMENT_METHOD_LABELS } from "../operations/payments";
 import { salesCategoryLabel, type SalesLine } from "../sales-lines";
-import type { Customer, Expense, Invoice, Payment, PaymentMethod, Product, ProductCategory } from "../types";
+import {
+  NO_PROFIT_FILTERS,
+  profitFigures,
+  profitLookups,
+  profitOf,
+  withPaySight,
+  type ProfitData,
+  type ProfitFilters,
+} from "../profit";
+import type { Customer, Invoice, Payment, PaymentMethod, Product, ProductCategory } from "../types";
 import { hubWindow, type HubWindow, type ReportRange } from "./periods";
 import type { ReportVisibility } from "./visibility";
 
@@ -54,7 +63,6 @@ export type HubInvoice = Pick<
 export interface HubReportData {
   today: string;
   invoices: readonly HubInvoice[];
-  expenses: readonly Pick<Expense, "status" | "category" | "date" | "amount">[];
   /** Every product a line may name, deleted ones included, so old lines keep their category. */
   products: readonly Pick<Product, "id" | "category">[];
   payments: readonly Pick<
@@ -80,21 +88,55 @@ function hubInvoices<T extends Pick<Invoice, "issuedAt" | "locationId">>(
   );
 }
 
+/** What Profit and loss reads: the profit calculation's documents (ADR 0061 decision 2) and today. */
+export type PnlData = ProfitData & { today: string };
+
+/** Why Profit and loss refuses a browser's invoices (ADR 0037, 2026-11-17). */
+export const PNL_UNKNOWN_COST = "An invoice has no cost, so the profit and loss can't be worked out.";
+
+/** Whether an invoice reached the report without its cost, on the head or on a line. */
+const costUnknown = (invoice: { cost?: string | null; lines: readonly { unitCost?: string | null }[] }) =>
+  invoice.cost == null || invoice.lines.some((line) => line.unitCost == null);
+
 /**
- * Profit and loss by month (spec rule 24), computed from invoices and expenses, never typed by hand.
- * Cost of goods, gross margin, margin and net income need the `margin` flag (ADR 0055 S18); without
- * pay sight, payroll expenses are left out before anything is added up and the headers say so (S3).
- * Rows and totals hold only the visible columns. It reads stored invoices only (the API's report
- * rows, DemoStore's records), so it refuses an unknown cost (`storedPnl`; ADR 0037, 2026-11-17).
+ * The Business report's filters a Profit and loss query stands for (ADR 0061 decision 2): a picked
+ * warehouse is the Business report with that one location ticked, so revenue follows `soldAt` and
+ * operating expenses are that location's (rule 22). P&L has no product category, expense category,
+ * salesperson or vendor filter.
  */
-export function pnlReport(
-  query: PnlQuery,
-  data: Pick<HubReportData, "today" | "invoices" | "expenses">,
-  show: Pick<ReportVisibility, "margin" | "payroll">,
-): Report {
+export function pnlFilters(query: Pick<PnlQuery, "locationId">): ProfitFilters {
+  return { ...NO_PROFIT_FILTERS, locationIds: query.locationId ? [query.locationId] : [] };
+}
+
+/**
+ * Profit and loss by month (spec rule 24; ADR 0061 decision 2). Each row is the Business report's
+ * profit for that whole calendar month and the same filters, worked out by the same `profitFigures`
+ * and `profitOf`: revenue and cost of goods from invoice lines, Expenses = operating expenses
+ * (cost expenses with tax, people costs, bad debts and shared costs), Net income = net profit.
+ * Cost of goods, gross margin, margin and net income need the `margin` flag (ADR 0055 S18); without
+ * pay sight, payroll and pay periods are left out before anything is added up and the headers say
+ * so (S3). It reads stored invoices only, so it refuses an unknown cost (ADR 0037, 2026-11-17).
+ */
+export function pnlReport(query: PnlQuery, data: PnlData, show: Pick<ReportVisibility, "margin" | "payroll">): Report {
   const w = hubWindow(query.range, data.today);
-  const expenses = (show.payroll ? data.expenses : withoutPayroll(data.expenses)).filter((e) => e.date >= w.from);
-  const months = storedPnl(monthlyPnl(w.months, hubInvoices(data.invoices, query, w), expenses));
+  if (data.invoices.some((i) => !i.voidedAt && i.issuedAt >= w.from && costUnknown(i))) {
+    throw new Error(PNL_UNKNOWN_COST);
+  }
+  const seen = withPaySight(data, show.payroll);
+  const look = profitLookups(seen);
+  const filters = pnlFilters(query);
+  const months = w.months.map((month) => {
+    const p = profitOf(profitFigures(seen, look, filters, `${month}-01`, monthEnd(month)), filters.locationIds);
+    return {
+      month,
+      revenue: moneyString(p.revenue),
+      cogs: moneyString(p.cost),
+      grossMargin: moneyString(p.gross),
+      grossMarginPct: marginPct(p.revenue, p.cost).toString(),
+      expenses: moneyString(p.opex),
+      netIncome: moneyString(p.net),
+    };
+  });
   const columns: ReportColumn[] = [
     { id: "month", header: "Month", format: "month" },
     { id: "revenue", header: "Revenue", kind: "money" },
