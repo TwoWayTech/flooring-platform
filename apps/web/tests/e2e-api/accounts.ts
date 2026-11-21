@@ -38,6 +38,12 @@ export const INSTALLER_EMAIL = "marcus.bell@summitfloor.example";
  */
 export const DISABLED_EMAIL = "victor.sims@summitfloor.example";
 
+/**
+ * Harbor Staffing Co.'s Owner, Elena Brooks: the HR Suite company `pnpm db:seed` writes for local testing
+ * only (ADR 0065). The Owner role requires MFA. She signs in on the HR host (`/login?product=hr` on localhost).
+ */
+export const HARBOR_OWNER_EMAIL = "elena.brooks@harborstaffing.example";
+
 /** The seeded accounts these tests sign in with, reset before each run (global-setup.ts). */
 export const SEEDED_EMAILS = [
   OWNER_EMAIL,
@@ -48,6 +54,7 @@ export const SEEDED_EMAILS = [
   EMPLOYEE_EMAIL,
   WAREHOUSE_EMAIL,
   PURCHASING_EMAIL,
+  HARBOR_OWNER_EMAIL,
 ] as const;
 
 /** The password `pnpm db:seed` gave the seeded users. */
