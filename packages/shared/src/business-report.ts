@@ -9,6 +9,7 @@ import {
   firstById,
   inRange,
   lineMoney,
+  NO_LOCATION,
   profitFigures,
   profitLookups,
   profitOf,
@@ -272,6 +273,12 @@ export function businessWindow(filters: Pick<BusinessFilters, "from" | "to">, to
 /** What a figure that points at a location no longer in the company is called (ADR 0055, the gate guard). */
 export const REMOVED_LOCATION = "Removed location";
 
+/**
+ * The Profit by location row for costs a company with no locations keeps whole (rule 6), so the
+ * rows still add up to the company's net profit.
+ */
+export const COMPANY_WIDE = { id: "company-wide", name: "Company-wide" } as const;
+
 const monthsIn = (from: string, to: string) => {
   const out: string[] = [];
   let [y, m] = from.split("-").map(Number) as [number, number];
@@ -507,7 +514,7 @@ export function businessReport(
     },
   ];
 
-  if (show.margin && data.locations.length > 0 && !repOnly)
+  if (show.margin && (data.locations.length > 0 || now.shared.has(NO_LOCATION)) && !repOnly)
     sections.push(profitByLocation(data, now, locationIds, show.payroll));
   sections.push(...revenueSections(look, now, show));
   if (!repOnly) {
@@ -556,6 +563,8 @@ function profitByLocation(
           .filter((id) => !liveIds.has(id))
           .sort()
           .map((id) => ({ id, name: REMOVED_LOCATION }));
+  // Costs with nowhere to be split stay the company's; no location filter can be on then (rule 6).
+  const companyWide = f.shared.has(NO_LOCATION) ? [{ id: NO_LOCATION, name: COMPANY_WIDE.name }] : [];
   const columns = [
     moneyCol("revenue", "Revenue"),
     moneyCol("cogs", "Cost of goods"),
@@ -563,14 +572,14 @@ function profitByLocation(
     moneyCol("shared", "Shared expenses"),
     moneyCol("net", "Net profit"),
   ];
-  const rows = [...live, ...removed].map((l) => {
+  const rows = [...live, ...removed, ...companyWide].map((l) => {
     const own = f.invoices.filter((i) => soldAt(i) === l.id);
     const revenue = sum(own.map((i) => dec(i.subtotal).times(sign(i))));
     const cost = sum(own.map((i) => dec(i.cost).times(sign(i))));
     const direct = (f.direct.get(l.id) ?? dec(0)).plus(f.people.get(l.id) ?? 0).plus(f.badDebts.get(l.id) ?? 0);
     const shared = f.shared.get(l.id) ?? dec(0);
     return row(
-      l.id,
+      l.id === NO_LOCATION ? COMPANY_WIDE.id : l.id,
       l.name,
       {
         revenue: money(revenue),

@@ -227,7 +227,7 @@ With a salesperson filter the note reads "Filtered to one salesperson, so the su
 
 ### 14. Section: Profit by location
 
-`profitByLocation` in `business-report.ts`. Key `locations`. Shown when `show.margin`, the company has locations and no salesperson filter is on. It lists the picked locations, or all. Chart column: Net profit.
+`profitByLocation` in `business-report.ts`. Key `locations`. Shown when `show.margin`, the company has locations (or holds a cost kept whole because it has none, rule 6) and no salesperson filter is on. Such a cost is its own row, "Company-wide" (id `company-wide`), so the rows still add up to company net profit (2026-11-21). It lists the picked locations, or all. Chart column: Net profit.
 
 ```
 own     = invoices in scope where soldAt(i) === location

@@ -1,5 +1,6 @@
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
-import { DOCUMENT_TOKENS, formatNumber, type NumberSettings, type Report } from "@workspace/shared";
+import { DOCUMENT_TOKENS, endSentence, formatNumber, type NumberSettings, type Report } from "@workspace/shared";
+import { pdfSafe, pdfText } from "@/lib/pdf-text";
 
 const { ink, muted, hairline } = DOCUMENT_TOKENS;
 const styles = StyleSheet.create({
@@ -16,7 +17,7 @@ const styles = StyleSheet.create({
 
 /** A report as a PDF, printed from the same report data as the screen and the CSV. */
 export function ReportPdf({
-  report,
+  report: shown,
   company,
   filters,
   settings,
@@ -28,13 +29,13 @@ export function ReportPdf({
 }) {
   const cell = (value: string | undefined, kind: Parameters<typeof formatNumber>[1] | undefined) =>
     value === undefined || value === "" ? "" : kind ? formatNumber(value, kind, settings) : value;
+  // The PDF font lacks some signs (click-through #11); the screen keeps them.
+  const report = pdfSafe(shown);
   return (
     <Document title={report.title} author={company}>
       <Page size="LETTER" orientation={report.columns.length > 5 ? "landscape" : "portrait"} style={styles.page}>
         <Text style={styles.title}>{report.title}</Text>
-        <Text style={styles.muted}>
-          {company}. {filters}
-        </Text>
+        <Text style={styles.muted}>{pdfText(`${endSentence(company)} ${filters}`)}</Text>
         <View style={styles.table}>
           <View style={styles.row}>
             {report.columns.map((c) => (

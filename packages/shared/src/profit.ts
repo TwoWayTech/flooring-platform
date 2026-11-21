@@ -48,7 +48,7 @@ export type ProfitData = Pick<
 >;
 
 /** Where a company-wide cost sits when the company has no location to split it across (no location id is empty). */
-const NO_LOCATION = "";
+export const NO_LOCATION = "";
 
 /** The filters profit follows (spec rule 22); the period is passed on its own. */
 export type ProfitFilters = Pick<

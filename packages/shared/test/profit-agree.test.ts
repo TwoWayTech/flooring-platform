@@ -17,7 +17,7 @@ import {
   type Report,
   type ReportRange,
 } from "../src";
-import { businessDataOf, loadFixtures, summaryValue } from "./report-fixtures";
+import { businessDataOf, loadFixtures, sectionOf, summaryValue } from "./report-fixtures";
 
 const PAY: BusinessVisibility = { margin: true, payroll: true, people: true, stock: true };
 const NO_PAY: BusinessVisibility = { ...PAY, payroll: false, people: false };
@@ -229,5 +229,34 @@ describe("periodProfit follows the Business report's rules 5 to 9 (reports.md)",
       opex: "100.00",
       net: "-100.00",
     });
+  });
+
+  it("gives a company with no locations a Company-wide row, so Profit by location adds up to its net", () => {
+    const data: BusinessData = {
+      ...base,
+      locations: [],
+      expenses: [expense({ locationId: null, tax: "0.00" })],
+      payments: [],
+      refunds: [],
+      bills: [],
+      supplierPayments: [],
+      receipts: [],
+      purchaseOrders: [],
+      suppliers: [],
+      users: [],
+      products: [],
+      rolls: [],
+      stockMovements: [],
+      today: "2026-04-15",
+    };
+    const report = businessReport(data, { ...MONTH, ...NO_PROFIT_FILTERS }, PAY);
+    const section = sectionOf(report, "locations");
+    expect(section.rows.map((r) => [r.id, r.label])).toEqual([
+      [SHOWROOM, "Removed location"],
+      ["company-wide", "Company-wide"],
+    ]);
+    expect(section.rows.find((r) => r.id === "company-wide")!.values.shared).toBe("100.00");
+    expect(section.total!.values.net).toBe(summaryValue(report, "net"));
+    expect(summaryValue(report, "net")).toBe("300.00");
   });
 });
