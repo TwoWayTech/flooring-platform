@@ -1,3 +1,4 @@
+import { CUSTOMER_FIELD_MESSAGES } from "../../customer-rules";
 import { ADDRESS_LABELS } from "../../customers";
 import { PAYMENT_TERM_LABELS } from "../../operations/quotes";
 import type { Customer, CustomerAddressLabel, CustomerType, PaymentTerms } from "../../types";
@@ -250,6 +251,7 @@ export const CUSTOMERS: KindHandler = {
         label: "Payment terms",
         type: "choice",
         choices: PAYMENT_TERM_LABELS,
+        unknownChoice: CUSTOMER_FIELD_MESSAGES.terms,
         aliases: ["terms"],
         examples: ["Net 30", "Due on receipt"],
       },

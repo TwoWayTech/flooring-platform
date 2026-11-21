@@ -115,6 +115,16 @@ export function seesMargin(has: (key: PermissionKey) => boolean): boolean {
   return has(SENSITIVE.margin) && has(SENSITIVE.productCost);
 }
 
+/**
+ * Fields of invoices and quotes, and of their lines, that give the margin away: the cost of what
+ * was sold (`unitCost` on a line, `cost` on the document). Price less cost is the margin, so the
+ * API strips them on sales documents from anyone who may not see the margin (`seesMargin`), on top
+ * of the product-cost rule in SENSITIVE_FIELDS (CLAUDE.md rule 5; click-through #68). A company
+ * ceiling without the margin key then hides them even from the Owner. Purchasing keeps its own
+ * line costs, which its buyers need without margin sight.
+ */
+export const MARGIN_REVEALING_FIELDS: readonly string[] = ["unitCost", "cost"];
+
 /** A snake_case column name as the camelCase property name it stands for (`unit_cost` → `unitCost`). */
 function camelCase(field: string): string {
   return field.replace(/_([a-z0-9])/g, (_match, letter: string) => letter.toUpperCase());

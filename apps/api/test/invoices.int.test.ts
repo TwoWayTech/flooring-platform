@@ -12,6 +12,7 @@ import {
   taxRules,
   userProfiles,
 } from "@workspace/db/company";
+import { tenantPermissionCeiling } from "@workspace/db/control";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
 import {
   addDays,
@@ -25,7 +26,7 @@ import {
   type Payment,
   type Refund,
 } from "@workspace/shared";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import request from "supertest";
@@ -837,6 +838,34 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     expect(owners?.cost).toBe(stored);
     expect(owners!.lines).toHaveLength(mine!.lines.length);
     expect(owners!.lines.every((line) => typeof line.unitCost === "string")).toBe(true);
+  });
+
+  it("#68 strips invoice and quote costs from the Owner while the ceiling takes margin sight away", async () => {
+    // Price less cost is the margin, so cost on sales documents needs margin sight too (CLAUDE.md rule 5).
+    type Doc = { id: string; cost?: string; lines: { unitCost?: string }[] };
+    const customer = await call("post", "/customers", cookies.owner).send({ name: "Ceiling Check" }).expect(201);
+    const { quote, invoice } = await invoiced(cookies.owner, customer.body.id);
+    const find = async (path: string, id: string) =>
+      ((await call("get", path, cookies.owner).expect(200)).body as Doc[]).find((doc) => doc.id === id)!;
+    const costed = (doc: Doc) => doc.lines.filter((line) => "unitCost" in line).length;
+    const row = and(
+      eq(tenantPermissionCeiling.tenantId, company.id),
+      eq(tenantPermissionCeiling.permissionKey, "sales.margin.view_sensitive"),
+    );
+    expect(costed(await find("/invoices", invoice.id))).toBeGreaterThan(0);
+    await harness.control.db.update(tenantPermissionCeiling).set({ allowed: false }).where(row);
+    try {
+      const shown = await find("/invoices", invoice.id);
+      expect(shown).not.toHaveProperty("cost");
+      expect(shown.lines.length).toBeGreaterThan(0);
+      expect(costed(shown)).toBe(0);
+      expect(costed(await find("/quotes", quote.id))).toBe(0);
+    } finally {
+      await harness.control.db.update(tenantPermissionCeiling).set({ allowed: true }).where(row);
+    }
+    const restored = await find("/invoices", invoice.id);
+    expect(typeof restored.cost).toBe("string");
+    expect(costed(restored)).toBe(restored.lines.length);
   });
 
   it("never reaches another company's invoices, payments or files", async () => {

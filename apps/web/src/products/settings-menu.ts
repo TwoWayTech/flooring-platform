@@ -207,5 +207,7 @@ export const SETTINGS_MENU: MenuItem[] = [
     features: ["settings.database"],
     group: "data",
     description: "Plan reading records straight from your current system's database.",
+    // A plan screen with no API behind it, so the real product leaves it out (click-through #69).
+    demoOnly: true,
   },
 ];

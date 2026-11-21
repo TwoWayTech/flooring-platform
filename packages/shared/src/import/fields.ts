@@ -1,3 +1,4 @@
+import { zipProblem } from "../customer-rules";
 import { dec, moneyString } from "../money";
 import type { ImportField } from "./types";
 
@@ -109,6 +110,7 @@ function readChoice(raw: string, field: ImportField): ImportCellResult {
   const wanted = fold(raw);
   const found = Object.entries(choices).find(([value, label]) => fold(value) === wanted || fold(label) === wanted);
   if (found) return { value: found[0] };
+  if (field.unknownChoice) return { error: field.unknownChoice };
   const labels = Object.values(choices);
   const hint = labels.length > 12 ? `a value like ${field.examples[0]}` : `one of: ${labels.join(", ")}`;
   return { error: `Unknown ${field.label.toLowerCase()} “${raw}”. Use ${hint}.` };
@@ -162,6 +164,11 @@ export function readCell(field: ImportField, text: string): ImportCellResult {
       return readChoice(raw, field);
     case "list":
       return readList(raw, field);
+    case "zip": {
+      // Read with the cell, so a bad ZIP is flagged even on a row with other problems (click-through #51).
+      const problem = zipProblem(raw);
+      return problem ? { error: problem } : { value: raw };
+    }
     case "text":
       return { value: raw };
   }

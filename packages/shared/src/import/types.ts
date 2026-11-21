@@ -8,9 +8,9 @@ export type ImportKind =
 /**
  * How a cell is read (spec G1 "Validate"): plain text, an email, money with at most two decimals,
  * a number (optionally with its unit, such as "12 ft"), a whole number, a date, yes or no, one
- * value from a list, or several values separated by semicolons.
+ * value from a list, several values separated by semicolons, or a US ZIP code.
  */
-export type FieldType = "text" | "email" | "money" | "number" | "integer" | "date" | "bool" | "choice" | "list";
+export type FieldType = "text" | "email" | "money" | "number" | "integer" | "date" | "bool" | "choice" | "list" | "zip";
 
 /** One column an import kind understands. */
 export interface ImportField {
@@ -22,6 +22,8 @@ export interface ImportField {
   aliases?: readonly string[];
   /** For choice and list fields: the stored value and the label people type. */
   choices?: Readonly<Record<string, string>>;
+  /** For choice fields: what an unknown value is told, when a form says the same (click-through #51). */
+  unknownChoice?: string;
   /** For number fields: the unit a value may carry, such as "ft" in "12 ft". */
   unit?: "ft" | "sq ft";
   /** What the template shows in its two example rows. */

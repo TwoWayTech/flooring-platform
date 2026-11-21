@@ -5,6 +5,7 @@ import {
   plans,
   platformAdmins,
   products,
+  tenantPermissionCeiling,
   tenantSubscriptions,
   twoFactor,
   user,
@@ -468,12 +469,88 @@ describe("users, roles and access requests (P10 part 2, needs the local PostgreS
     const entries = await call("get", "/audit", owner.cookie).expect(200);
     const actions = entries.body.map((entry: { action: string }) => entry.action);
     expect(actions).toEqual(expect.arrayContaining(["Changed roles", "Created role", "Invited user", "Reset MFA"]));
+    // The role ids an invitation names come with the roles' names, so the screen shows names (#58).
+    type Entry = { action: string; after: string | null; names?: Record<string, string> };
+    const roleIdsOf = (entry: Entry) => (JSON.parse(entry.after ?? "{}") as { roleIds?: string[] }).roleIds ?? [];
+    const invited = (entries.body as Entry[]).find((e) => e.action === "Invited user" && roleIdsOf(e).length > 0);
+    expect(invited).toBeDefined();
+    for (const id of roleIdsOf(invited!)) expect(invited!.names?.[id]).toEqual(expect.any(String));
     const handle = await harness.companyDb(company.id);
     try {
       const rows = await handle.db.select().from(auditLog).where(eq(auditLog.action, "Approved support access"));
       expect(rows).toHaveLength(1);
     } finally {
       await handle.close();
+    }
+  });
+
+  it("names only this company's records under id fields, never another company's user (PR #97 review)", async () => {
+    const elsewhere = await harness.provisionCompany("auditnames");
+    const stranger = await harness.userIdOf(await harness.addUser({ companyIds: [elsewhere.id], roles: ["owner"] }));
+    const strangerName = "Elsewhere Stranger";
+    await harness.control.db.update(user).set({ name: strangerName }).where(eq(user.id, stranger));
+    const ownerId = await harness.userIdOf(owner.email);
+    const handle = await harness.companyDb(company.id);
+    try {
+      await handle.db.insert(auditLog).values([
+        {
+          at: new Date(),
+          actorUserId: ownerId,
+          actorRole: "Owner",
+          category: "data",
+          action: "Probe free text",
+          targetType: "customer",
+          targetLabel: stranger,
+          after: { name: stranger, note: ownerId },
+        },
+        {
+          at: new Date(),
+          actorUserId: ownerId,
+          actorRole: "Owner",
+          category: "data",
+          action: "Probe id field",
+          targetType: "customer",
+          targetLabel: "Probe",
+          after: { salesRepId: stranger, approverId: ownerId },
+        },
+        {
+          at: new Date(),
+          actorUserId: ownerId,
+          actorRole: "Owner",
+          category: "data",
+          action: "Probe cost",
+          targetType: "invoice",
+          targetLabel: "Probe",
+          after: { unitCost: "2.1000", total: "450.00" },
+        },
+      ]);
+    } finally {
+      await handle.close();
+    }
+    type Entry = { action: string; after: string | null; names?: Record<string, string> };
+    const read = async () => (await call("get", "/audit", owner.cookie).expect(200)).body as Entry[];
+    const entries = await read();
+    const free = entries.find((e) => e.action === "Probe free text")!;
+    // A UUID typed as text stays text: nothing is looked up for it, not even this company's own user.
+    expect(free.names).toBeUndefined();
+    expect(JSON.parse(free.after!)).toEqual({ name: stranger, note: ownerId });
+    const ids = entries.find((e) => e.action === "Probe id field")!;
+    expect(ids.names?.[ownerId]).toEqual(expect.any(String));
+    expect(ids.names?.[stranger]).toBeUndefined();
+    expect(JSON.stringify(entries)).not.toContain(strangerName);
+    expect(JSON.parse(entries.find((e) => e.action === "Probe cost")!.after!)).toHaveProperty("unitCost");
+
+    // Cost in an audit entry needs margin sight too, as on the sales routes (#68).
+    const row = and(
+      eq(tenantPermissionCeiling.tenantId, company.id),
+      eq(tenantPermissionCeiling.permissionKey, "sales.margin.view_sensitive"),
+    );
+    await harness.control.db.update(tenantPermissionCeiling).set({ allowed: false }).where(row);
+    try {
+      const cost = (await read()).find((e) => e.action === "Probe cost")!;
+      expect(JSON.parse(cost.after!)).toEqual({ total: "450.00" });
+    } finally {
+      await harness.control.db.update(tenantPermissionCeiling).set({ allowed: true }).where(row);
     }
   });
 

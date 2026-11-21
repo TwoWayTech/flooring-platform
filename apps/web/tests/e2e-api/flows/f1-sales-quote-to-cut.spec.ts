@@ -3,6 +3,7 @@ import {
   dec,
   depositAmount,
   moneyString,
+  stockIssueAction,
   sum,
   type Customer,
   type Invoice,
@@ -242,7 +243,7 @@ flowTest.describe("flow F1: sales from a new customer to the cut and a voided de
         },
       );
 
-      const { t4, cost } = await flowTest.step("4. Cole cuts the held roll", async () => {
+      const { t4, cost, rollNumber } = await flowTest.step("4. Cole cuts the held roll", async () => {
         const cole = await personas.open(WAREHOUSE_EMAIL);
         const { page } = cole;
         const holdsAnswer = waitForAnswer<StockHold[]>(page, "GET", /^\/api-proxy\/stock-holds$/);
@@ -298,7 +299,7 @@ flowTest.describe("flow F1: sales from a new customer to the cut and a voided de
         const goods = movedBy(t3, tb, "cost_of_goods_sold");
         expect(dec(goods).gt(0), "the cut posts its cost of goods").toBe(true);
         expectLedgerMoved(t3, tb, { cost_of_goods_sold: goods, inventory: dec(goods).negated() });
-        return { t4: tb, cost: goods };
+        return { t4: tb, cost: goods, rollNumber: parent.rollNumber };
       });
 
       const paidRest = await flowTest.step("5. Grace records the final payment; it counts at once", async () => {
@@ -375,7 +376,13 @@ flowTest.describe("flow F1: sales from a new customer to the cut and a voided de
         await expectAuditRows(
           grace.page,
           invoice.number,
-          ["Converted quote to invoice", "Recorded deposit", "Recorded payment", "Issued stock", "Voided payment"],
+          [
+            "Converted quote to invoice",
+            "Recorded deposit",
+            "Recorded payment",
+            stockIssueAction(true, invoice.number, rollNumber),
+            "Voided payment",
+          ],
           since,
         );
       });

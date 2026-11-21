@@ -1520,8 +1520,8 @@
     },
     "/settings/database": {
       "file": "apps/web/src/app/(app)/settings/database/page.tsx",
-      "classification": "mixed",
-      "hiddenInApiMode": false,
+      "classification": "demo-only",
+      "hiddenInApiMode": true,
       "layouts": [
         "root",
         "(app)",

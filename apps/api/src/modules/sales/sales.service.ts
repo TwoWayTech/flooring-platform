@@ -180,7 +180,14 @@ export class SalesService {
           targetType: "customer",
           targetId: id,
           targetLabel: name,
-          after: { type: input.type ?? "homeowner" },
+          // The new customer as it was saved, so the log reads who was added (click-through #58).
+          after: {
+            name,
+            type: input.type ?? "homeowner",
+            email: input.email?.trim() ?? "",
+            phone: input.phone?.trim() ?? "",
+            terms: localization.documents.defaultTerms,
+          },
         },
         tx,
       );

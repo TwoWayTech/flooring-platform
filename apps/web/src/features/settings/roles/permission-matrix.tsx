@@ -107,15 +107,23 @@ export function PermissionMatrix({ modules: included, granted, lockOf, onToggle 
               </h3>
               <p className="text-muted-foreground text-xs">{module.description}</p>
             </div>
-            <ScrollRegion label={`${module.label} permissions`} className="border-hairline rounded-md border">
-              <table className="w-full text-sm">
-                <thead className="bg-raised text-muted-foreground text-xs">
+            {/* The box scrolls both ways, so the action headers and the resource names stay in view (#53). */}
+            <ScrollRegion
+              label={`${module.label} permissions`}
+              className="border-hairline max-h-[70vh] overflow-y-auto rounded-md border"
+            >
+              <table className="w-full border-separate border-spacing-0 text-sm">
+                <thead className="text-muted-foreground text-xs">
                   <tr>
-                    <th scope="col" className="h-9 px-3 text-left font-medium">
+                    <th scope="col" className="bg-raised sticky top-0 left-0 z-20 h-9 px-3 text-left font-medium">
                       Resource
                     </th>
                     {actions.map((a) => (
-                      <th key={a} scope="col" className="px-2 text-center font-medium whitespace-nowrap">
+                      <th
+                        key={a}
+                        scope="col"
+                        className="bg-raised sticky top-0 z-10 px-2 text-center font-medium whitespace-nowrap"
+                      >
                         {actionLabel(a)}
                       </th>
                     ))}
@@ -123,8 +131,11 @@ export function PermissionMatrix({ modules: included, granted, lockOf, onToggle 
                 </thead>
                 <tbody>
                   {rows.map((row) => (
-                    <tr key={row.resource} className="border-hairline border-t">
-                      <th scope="row" className="h-9 px-3 text-left font-normal whitespace-nowrap">
+                    <tr key={row.resource} className="*:border-hairline *:border-t">
+                      <th
+                        scope="row"
+                        className="bg-surface sticky left-0 z-[1] h-9 px-3 text-left font-normal whitespace-nowrap"
+                      >
                         {row.resource}
                       </th>
                       {actions.map((action) => {

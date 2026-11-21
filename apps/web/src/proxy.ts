@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { isDemoMode } from "./lib/data-source";
-import { PRODUCT_COOKIE, PRODUCT_HEADER, productForRequest } from "./lib/product";
+import { PRODUCT_HEADER, productChoice, productCookie } from "./lib/product";
 import { API_PROXY_PATH, AUTH_BASE_PATH, AUTH_SESSION_COOKIES } from "./lib/session/auth-cookie";
 import { reachesAuthViaApiProxy, withAuthProxyHeaders } from "./lib/session/auth-proxy";
 import { SESSION_COOKIE } from "./lib/session/session";
@@ -32,12 +32,14 @@ export function proxy(request: NextRequest) {
     return new NextResponse(null, { status: 404 });
   }
   if (reachesAuthViaApiProxy(request.nextUrl.pathname)) return new NextResponse(null, { status: 404 });
-  const queryProduct = request.nextUrl.searchParams.get("product");
-  const product = productForRequest(
-    request.headers.get("host") ?? "",
-    queryProduct,
-    request.cookies.get(PRODUCT_COOKIE)?.value,
-  );
+  const cookieName = productCookie(isDemoMode());
+  const { product, remember } = productChoice({
+    demo: isDemoMode(),
+    host: request.headers.get("host") ?? "",
+    pathname: request.nextUrl.pathname,
+    queryProduct: request.nextUrl.searchParams.get("product"),
+    cookieProduct: request.cookies.get(cookieName)?.value,
+  });
   const signedIn = hasSessionCookie(request);
   const forwarded = withAuthProxyHeaders(
     new Headers(request.headers),
@@ -49,7 +51,7 @@ export function proxy(request: NextRequest) {
     signedIn || isPublic(request.nextUrl.pathname)
       ? NextResponse.next({ request: { headers: forwarded } })
       : NextResponse.redirect(new URL("/login", request.url));
-  if (queryProduct) response.cookies.set(PRODUCT_COOKIE, product, { path: "/", sameSite: "lax" });
+  if (remember) response.cookies.set(cookieName, product, { path: "/", sameSite: "lax" });
   return response;
 }
 

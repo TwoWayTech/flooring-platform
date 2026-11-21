@@ -13,6 +13,7 @@ import {
   rollAvailable,
   cartonPack,
   isWholeCartons,
+  stockIssueAction,
   stockUnit,
   type AdjustmentReason,
   type Invoice,
@@ -105,8 +106,10 @@ export async function issueReservation(ctx: ActionContext, reservationId: string
   }
   const source = { kind: "invoice" as const, id: invoice.id, number: invoice.number };
   let after: string;
+  let cutRollNumber: string | null = null;
   if (reservation.rollId) {
     const roll = ctx.db.get("rolls", reservation.rollId)!;
+    cutRollNumber = roll.rollNumber;
     if (roll.transferId) throw new DemoRuleError(`Roll ${roll.rollNumber} is on a transfer; receive it first.`);
     const result = cutRoll(
       roll,
@@ -135,7 +138,7 @@ export async function issueReservation(ctx: ActionContext, reservationId: string
   ctx.db.put("reservations", issued);
   ctx.audit({
     category: "data",
-    action: override && !mayIssue(ledger) ? "Issued stock before payment" : "Issued stock",
+    action: stockIssueAction(!(override && !mayIssue(ledger)), invoice.number, cutRollNumber),
     target: invoice.number,
     before: "reserved",
     after: override && !mayIssue(ledger) ? `${after}; override: ${override}` : after,

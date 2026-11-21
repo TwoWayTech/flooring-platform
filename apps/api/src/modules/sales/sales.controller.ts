@@ -1,10 +1,18 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Req } from "@nestjs/common";
-import { dec, isStateCode, PERCENT_TEXT, QUANTITY_TEXT } from "@workspace/shared";
+import {
+  CUSTOMER_FIELD_MESSAGES,
+  dec,
+  isStateCode,
+  PAYMENT_TERMS,
+  PERCENT_TEXT,
+  QUANTITY_TEXT,
+} from "@workspace/shared";
 import type { Request } from "express";
 import { z } from "zod";
 import type { RequestAccess } from "../../core/access/access.service";
 import { Audited, RequireModule, RequirePermission } from "../../core/access/permission.decorators";
 import { CurrentAccess } from "../../core/access/permission.guard";
+import { MarginRevealingFields } from "../../core/access/sensitive-fields";
 import { actorOf, parse } from "../../core/access/request-actor";
 import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
@@ -47,7 +55,8 @@ const OPTIONAL_ID = z
   .optional()
   .transform((value) => value || undefined);
 
-const TERMS = z.enum(["due_on_receipt", "net_15", "net_30", "net_45"]);
+/** The allowed payment terms, refused in the form's and the import's words (click-through #51). */
+const TERMS = z.enum(PAYMENT_TERMS, CUSTOMER_FIELD_MESSAGES.terms);
 
 const NEW_CUSTOMER = z.object({
   name: z.string().max(200),
@@ -137,11 +146,12 @@ const STATUS = z.object({
 /**
  * Sales, part 1 (docs/product-spec/sales.md "Who uses it"; ADR 0037): customers and quotes, read
  * through data scope. Every route is in the `core` module. Line costs are stripped by name for
- * anyone without `inventory.product.view_sensitive`, and credit limits without
- * `customers.customer.view_sensitive`.
+ * anyone without `inventory.product.view_sensitive` or without margin sight (`seesMargin`,
+ * click-through #68), and credit limits without `customers.customer.view_sensitive`.
  */
 @Controller()
 @RequireModule("core")
+@MarginRevealingFields()
 export class SalesController {
   constructor(private readonly sales: SalesService) {}
 

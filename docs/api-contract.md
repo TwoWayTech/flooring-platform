@@ -830,7 +830,7 @@ ADR 0051 added the following:
 | `POST /api/demo/logout` | → `{ ok: true }` | Clears the cookie. |
 | `GET /api/demo/context` | → `{ session }` or 401 | A session made on the other product's host counts as signed out. |
 
-Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts starting `hr-demo` serve the HR Suite; on localhost `?product=hr` does (remembered in the `demo_product` cookie).
+Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts starting `hr-demo` serve the HR Suite; on localhost `?product=hr` does (remembered in the `demo_product` cookie in the demo, and in `product_choice` in api mode, where only the host or `/login`'s own `?product=` picks the sign-in page; click-through #69).
 
 ## Lifecycle
 

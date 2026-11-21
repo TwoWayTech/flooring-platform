@@ -454,6 +454,8 @@ describe("inventory part 2: issue and cut (P11, needs the local PostgreSQL)", ()
     try {
       const [cut] = await handle.db.select().from(rolls).where(eq(rolls.id, plainHold.rollId!));
       expect(dec(cut!.remainingLengthFt).toFixed(2)).toBe("70.00");
+      // The log names the roll and the invoice it was cut for (click-through #58).
+      expect(await auditActions()).toContain(`Cut roll ${cut!.rollNumber} for ${plain.body.number as string}`);
 
       // 95 ft of 100: the 5 ft left is under 12, so it moves to a remnant and the parent goes to 0.
       const rollId = await newRoll();

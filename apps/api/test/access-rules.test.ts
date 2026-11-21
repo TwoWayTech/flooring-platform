@@ -107,6 +107,19 @@ describe("stripSensitive (CLAUDE.md rule 5: the server strips sensitive fields)"
     expect(stripSensitive(named, new Set(), own)).toEqual(kept);
   });
 
+  it("strips a sales document's costs without margin sight, even with product cost (click-through #68)", () => {
+    const invoice = { id: "i1", total: "450.00", cost: "210.00", lines: [{ unitPrice: "4.50", unitCost: "2.1000" }] };
+    const costOnly = new Set<PermissionKey>(["inventory.product.view_sensitive"]);
+    const both = new Set<PermissionKey>(["inventory.product.view_sensitive", "sales.margin.view_sensitive"]);
+    expect(stripSensitive(invoice, costOnly)).toEqual(invoice);
+    expect(stripSensitive(invoice, costOnly, undefined, true)).toEqual({
+      id: "i1",
+      total: "450.00",
+      lines: [{ unitPrice: "4.50" }],
+    });
+    expect(stripSensitive(invoice, both, undefined, true)).toEqual(invoice);
+  });
+
   it("does not change the original response", () => {
     stripSensitive(body, new Set());
     expect(body.cost).toBe("2.5000");

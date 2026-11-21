@@ -67,6 +67,7 @@ describe("sensitive-field stripping and Object.prototype names (F-l, needs the l
     const context = {
       switchToHttp: () => ({ getRequest: () => ({ access: { permissions: new Set() } }) }),
       getHandler: () => PurchasingController.prototype.suppliers,
+      getClass: () => PurchasingController,
     } as unknown as ExecutionContext;
     const body = [{ name: "Ridge Supply", creditLimit: "5000.00", ...INHERITED_NAMES }];
     const next: CallHandler = { handle: () => of(body) };

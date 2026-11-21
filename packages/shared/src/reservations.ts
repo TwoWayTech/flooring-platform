@@ -15,6 +15,15 @@ export const ADJUSTMENT_REASON_LABELS: Record<AdjustmentReason, string> = {
 const active = (r: Reservation) => r.status === "active";
 
 /**
+ * The audit action of issuing a hold, naming what left (click-through #58): "Cut roll NM-1042 for
+ * INV-1220" for a roll, "Issued stock" for boxed goods, each "before payment" under an override.
+ */
+export function stockIssueAction(paidFor: boolean, invoiceNumber: string, rollNumber: string | null): string {
+  const what = rollNumber ? `Cut roll ${rollNumber} for ${invoiceNumber}` : "Issued stock";
+  return paidFor ? what : `${what} before payment`;
+}
+
+/**
  * How much stock an invoice line takes, in the product's stock unit (spec C2, A1): carpet takes ft
  * of roll length (sq ft ÷ roll width, to the nearest hundredth, so a length sold comes back as the
  * same length); boxed goods take their sq ft or items. Services and lines without stock take nothing.

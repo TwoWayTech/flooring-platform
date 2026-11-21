@@ -4,6 +4,7 @@ import { auditLog } from "@workspace/db/company";
 import { user } from "@workspace/db/control";
 import {
   canSeePayAudit,
+  isPaySensitiveAudit,
   payAuditDetailsVisible,
   redactPayAudit,
   type AuditEntry,
@@ -17,6 +18,7 @@ import { CONTROL_DB } from "../../core/database/control-db";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { viewerEmployeeId } from "../hr/hr-records";
+import { auditNames, uuidsIn } from "./audit-names";
 import { COMPANY_SUBJECT, loadPayAuditSubjects } from "./pay-audit-subjects";
 
 /** How many entries Settings → Audit log reads at once, newest first. */
@@ -49,8 +51,10 @@ export class AuditLogService {
   /**
    * The newest entries of the company's audit log. Before and after values are stripped of
    * sensitive fields the viewer may not see before they become text, because the response
-   * interceptor cannot look inside a string (CLAUDE.md rule 5; PR #11 security review). Pay-sensitive
-   * entries are then redacted, each by whom it is about (`redactPayAudit`).
+   * interceptor cannot look inside a string (CLAUDE.md rule 5; PR #11 security review), and a sales
+   * document's cost fields need margin sight there too, as on the documents' own routes (#68). Pay-sensitive
+   * entries are then redacted, each by whom it is about (`redactPayAudit`). Each entry whose details
+   * are shown carries the names of the records its ids stand for (`auditNames`; click-through #58).
    */
   async list(
     tenant: TenantContext,
@@ -76,8 +80,11 @@ export class AuditLogService {
       actorIds.length === 0
         ? []
         : await this.control.db.select({ id: user.id, name: user.name }).from(user).where(inArray(user.id, actorIds));
-    return rows.map((row) =>
-      redactPayAudit(
+    const shown = rows.map((row) => {
+      const before = stripSensitive(row.before, held, undefined, true);
+      const after = stripSensitive(row.after, held, undefined, true);
+      const visible = payAuditDetailsVisible(viewer, subjects.get(row.id) ?? COMPANY_SUBJECT);
+      const entry = redactPayAudit(
         {
           id: row.id,
           at: row.at.toISOString().slice(0, 16),
@@ -86,11 +93,24 @@ export class AuditLogService {
           category: row.category,
           action: row.action,
           target: row.targetLabel || row.targetType,
-          before: asText(stripSensitive(row.before, held)),
-          after: asText(stripSensitive(row.after, held)),
+          before: asText(before),
+          after: asText(after),
         },
-        payAuditDetailsVisible(viewer, subjects.get(row.id) ?? COMPANY_SUBJECT),
-      ),
+        visible,
+      );
+      // Ids are named only where the details are shown, so a hidden pay entry gives no name away.
+      const ids = visible || !isPaySensitiveAudit(row.action) ? uuidsIn([before, after]) : new Set<string>();
+      return { entry, ids };
+    });
+    const recordNames = await auditNames(
+      db,
+      this.control.db,
+      tenant.companyId,
+      new Set(shown.flatMap(({ ids }) => [...ids])),
     );
+    return shown.map(({ entry, ids }) => {
+      const named = [...ids].flatMap((id) => (recordNames.has(id) ? [[id, recordNames.get(id)!] as const] : []));
+      return named.length ? { ...entry, names: Object.fromEntries(named) } : entry;
+    });
   }
 }

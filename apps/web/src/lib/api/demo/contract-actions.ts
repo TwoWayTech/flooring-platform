@@ -526,7 +526,7 @@ export async function decideChangeOrder(
   }
   log(
     ctx,
-    decision.approve ? "Approved change order" : "Rejected change order",
+    `${decision.approve ? "Approved" : "Rejected"} change order ${order.number}`,
     contract,
     order.number,
     decision.reason.trim() || null,
