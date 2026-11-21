@@ -1,11 +1,25 @@
 import { daysBetween, addDays, monthEnd } from "./dates";
-import { fromCents, toCents, shareByWeight, weightsFor } from "./cost-sharing";
-import { countsAsCost, expenseCost, withoutPayroll, EXPENSE_CATEGORY_LABELS } from "./expenses";
+import { countsAsCost, expenseCost, EXPENSE_CATEGORY_LABELS } from "./expenses";
 import { inventoryValuation } from "./analytics";
-import { lineAmount } from "./documents";
 import { ledgerIndex } from "./ledger";
-import { dec, moneyString, roundMoney, sum, type Dec } from "./money";
+import { dec, moneyString, sum, type Dec } from "./money";
 import { billLedgerIndex, receivedValue } from "./operations/purchasing";
+import {
+  categoryOf,
+  firstById,
+  inRange,
+  lineMoney,
+  NO_LOCATION,
+  profitFigures,
+  profitLookups,
+  profitOf,
+  sign,
+  soldAt,
+  withPaySight,
+  add,
+  type ProfitFigures,
+  type ProfitLookups,
+} from "./profit";
 import { boxedStock } from "./stock";
 import { salesCategoryLabel, salesLines, type SalesLine } from "./sales-lines";
 import type {
@@ -259,7 +273,12 @@ export function businessWindow(filters: Pick<BusinessFilters, "from" | "to">, to
 /** What a figure that points at a location no longer in the company is called (ADR 0055, the gate guard). */
 export const REMOVED_LOCATION = "Removed location";
 
-const inRange = (date: string, from: string, to: string) => date >= from && date <= to;
+/**
+ * The Profit by location row for costs a company with no locations keeps whole (rule 6), so the
+ * rows still add up to the company's net profit.
+ */
+export const COMPANY_WIDE = { id: "company-wide", name: "Company-wide" } as const;
+
 const monthsIn = (from: string, to: string) => {
   const out: string[] = [];
   let [y, m] = from.split("-").map(Number) as [number, number];
@@ -276,26 +295,11 @@ const monthsIn = (from: string, to: string) => {
   }
 };
 
-/** Where an invoice's revenue belongs: where it was sold, else the warehouse it ships from (ADR 0023). */
-export const soldAt = (invoice: Pick<Invoice, "soldAtLocationId" | "locationId">) =>
-  invoice.soldAtLocationId ?? invoice.locationId;
-
-const sign = (i: Pick<Invoice, "isReturn">) => (i.isReturn ? -1 : 1);
 const money = (d: Dec) => moneyString(d);
 
-/** The first item with each id; a map lookup gives what `find` gave, without a scan per record. */
-function firstById<T extends { id: string }>(items: readonly T[]): Map<string, T> {
-  const out = new Map<string, T>();
-  for (const item of items) if (!out.has(item.id)) out.set(item.id, item);
-  return out;
-}
-
 /** Lookups built once per report, so no figure scans a whole list per record. The output is unchanged. */
-interface Lookups {
-  categories: Map<string, Pick<Product, "id" | "category">>;
-  invoices: Map<string, BusinessInvoice>;
+interface Lookups extends ProfitLookups {
   orders: Map<string, BusinessOrder>;
-  employees: Map<string, BusinessEmployee>;
   suppliers: Map<string, Pick<Supplier, "id" | "name">>;
   users: Map<string, Pick<User, "id" | "name">>;
   locations: Map<string, BusinessLocation>;
@@ -304,157 +308,13 @@ interface Lookups {
 
 function lookupsOf(data: BusinessData): Lookups {
   return {
-    categories: firstById(data.productCategories),
-    invoices: firstById(data.invoices),
+    ...profitLookups(data),
     orders: firstById(data.purchaseOrders),
-    employees: firstById(data.employees),
     suppliers: firstById(data.suppliers),
     users: firstById(data.users),
     locations: firstById(data.locations),
     billedReceipts: new Set(data.bills.flatMap((b) => b.receiptIds)),
   };
-}
-
-interface Figures {
-  invoices: BusinessInvoice[];
-  revenue: Dec;
-  cost: Dec;
-  direct: Map<string, Dec>;
-  people: Map<string, Dec>;
-  badDebts: Map<string, Dec>;
-  shared: Map<string, Dec>;
-  costExpenses: BusinessExpense[];
-  payLines: { amount: Dec; month: string; locationId: string | null; name: string; href: string }[];
-  writeOffs: BusinessAdjustment[];
-  rulesUsed: Set<string>;
-}
-
-const add = (map: Map<string, Dec>, key: string, value: Dec) => map.set(key, (map.get(key) ?? dec(0)).plus(value));
-
-/** A line's revenue and cost, signed for returns. */
-function lineMoney(inv: Pick<Invoice, "isReturn">, line: SalesLine) {
-  return {
-    revenue: lineAmount(line).times(sign(inv)),
-    cost: roundMoney(dec(line.quantity).times(line.unitCost)).times(sign(inv)),
-  };
-}
-
-/** A line's category key: the product's (deleted products keep theirs), or the tax category for labor and services. */
-function categoryOf(line: SalesLine, look: Lookups): string {
-  return (line.productId === undefined ? undefined : look.categories.get(line.productId))?.category ?? line.category;
-}
-
-/** The people costs per month, one source per month: HR pay where it exists, else a payroll expense (ADR 0023). */
-function peopleLines(data: BusinessData, look: Lookups, from: string, to: string): Figures["payLines"] {
-  const hrMonths = new Set<string>();
-  const lines: Figures["payLines"] = [];
-  for (const period of data.payPeriods.filter((p) => p.status === "approved" || p.status === "exported")) {
-    if (!inRange(period.end, from, to)) continue;
-    const month = period.end.slice(0, 7);
-    hrMonths.add(month);
-    for (const line of period.lines) {
-      const employee = look.employees.get(line.employeeId);
-      lines.push({
-        amount: dec(line.grossPay),
-        month,
-        locationId: employee?.homeLocationId ?? null,
-        name: `Gross pay, ${employee?.name ?? ""}`,
-        href: "/hr/pay-periods",
-      });
-    }
-  }
-  for (const e of data.expenses.filter(
-    (x) => x.category === "payroll" && x.status === "confirmed" && inRange(x.date, from, to),
-  )) {
-    if (!hrMonths.has(e.date.slice(0, 7)))
-      lines.push({
-        amount: expenseCost(e),
-        month: e.date.slice(0, 7),
-        locationId: e.locationId,
-        name: "Payroll",
-        href: "/finance?view=expenses",
-      });
-  }
-  return lines;
-}
-
-/** Works out the accrual figures for a period, including each location's share of company-wide costs. */
-function figuresFor(data: BusinessData, look: Lookups, f: BusinessFilters, from: string, to: string): Figures {
-  const { locations } = data;
-  const allInvoices = data.invoices.filter((i) => !i.voidedAt);
-  const wanted = (i: BusinessInvoice) => f.locationIds.length === 0 || f.locationIds.includes(soldAt(i));
-  const invoices = allInvoices.filter(
-    (i) => inRange(i.issuedAt, from, to) && wanted(i) && (!f.salesRepId || i.salesRepId === f.salesRepId),
-  );
-  let revenue = dec(0);
-  let cost = dec(0);
-  for (const inv of invoices) {
-    for (const line of salesLines(inv)) {
-      if (f.productCategory && categoryOf(line, look) !== f.productCategory) continue;
-      const m = lineMoney(inv, line);
-      revenue = revenue.plus(m.revenue);
-      cost = cost.plus(m.cost);
-    }
-  }
-  const costExpenses = data.expenses.filter(
-    (e) =>
-      countsAsCost(e) &&
-      e.category !== "payroll" &&
-      inRange(e.date, from, to) &&
-      (!f.expenseCategory || e.category === f.expenseCategory) &&
-      (!f.supplierId || e.supplierId === f.supplierId),
-  );
-  const direct = new Map<string, Dec>();
-  const shared = new Map<string, Dec>();
-  const people = new Map<string, Dec>();
-  const badDebts = new Map<string, Dec>();
-  const rulesUsed = new Set<string>();
-  // The revenue weights of a month use every non-void invoice of that month, whatever the filters
-  // (rule 6); each month is added up once.
-  const monthRevenue = new Map<string, Map<string, bigint>>();
-  const revenueInMonth = (month: string) => {
-    const known = monthRevenue.get(month);
-    if (known) return known;
-    const totals = new Map<string, bigint>();
-    for (const i of allInvoices)
-      if (i.issuedAt.startsWith(month))
-        totals.set(soldAt(i), (totals.get(soldAt(i)) ?? 0n) + toCents(dec(i.subtotal).times(sign(i))));
-    monthRevenue.set(month, totals);
-    return totals;
-  };
-  const spread = (amount: Dec, month: string) => {
-    const { rule, weights } = weightsFor(locations, data.settings.sharedCosts, revenueInMonth(month));
-    rulesUsed.add(rule);
-    for (const [id, cents] of shareByWeight(toCents(amount), weights)) add(shared, id, fromCents(cents));
-  };
-  for (const e of costExpenses) {
-    if (e.locationId) add(direct, e.locationId, expenseCost(e));
-    else spread(expenseCost(e), e.date.slice(0, 7));
-  }
-  const payLines = peopleLines(data, look, from, to);
-  for (const line of payLines) {
-    if (line.locationId) add(people, line.locationId, line.amount);
-    else spread(line.amount, line.month);
-  }
-  const writeOffs = data.adjustments.filter((a) => a.kind === "write_off" && inRange(a.at.slice(0, 10), from, to));
-  for (const a of writeOffs) {
-    const inv = look.invoices.get(a.invoiceId);
-    if (inv) add(badDebts, soldAt(inv), dec(a.amount));
-  }
-  return { invoices, revenue, cost, direct, people, badDebts, shared, costExpenses, payLines, writeOffs, rulesUsed };
-}
-
-const totalOf = (map: Map<string, Dec>, keys?: readonly string[]) =>
-  sum([...map.entries()].filter(([k]) => !keys || keys.length === 0 || keys.includes(k)).map(([, v]) => v));
-
-/** Operating expenses and net profit for the locations in scope (all when none is picked). */
-function bottomLine(f: Figures, locationIds: string[]) {
-  const opex = totalOf(f.direct, locationIds)
-    .plus(totalOf(f.people, locationIds))
-    .plus(totalOf(f.badDebts, locationIds))
-    .plus(totalOf(f.shared, locationIds));
-  const gross = f.revenue.minus(f.cost);
-  return { gross, opex, net: gross.minus(opex) };
 }
 
 function cashFigures(data: BusinessData, from: string, to: string) {
@@ -549,17 +409,16 @@ export function businessReport(
 ): BusinessReport {
   // Without pay sight, payroll expenses and pay periods leave before any figure is computed, so no
   // total, memo or drill list can give pay away (ADR 0041; ADR 0055 S3).
-  const data: BusinessData = show.payroll
-    ? input
-    : { ...input, expenses: withoutPayroll(input.expenses), payPeriods: [] };
+  const data = withPaySight(input, show.payroll);
   const { from, to, locationIds } = filters;
   const { previous, asOf } = businessWindow(filters, data.today);
   const look = lookupsOf(data);
-  const now = figuresFor(data, look, filters, from, to);
-  const before = figuresFor(data, look, filters, previous.from, previous.to);
+  const now = profitFigures(data, look, filters, from, to);
+  const before = profitFigures(data, look, filters, previous.from, previous.to);
   const vendor = (id: string | null) => (id === null ? undefined : look.suppliers.get(id))?.name ?? "No vendor";
-  const a = bottomLine(now, locationIds);
-  const b = bottomLine(before, locationIds);
+  // The same profit Profit and loss prints for the same period and filters (ADR 0061 decision 2).
+  const a = profitOf(now, locationIds);
+  const b = profitOf(before, locationIds);
   const nowCash = cashFigures(data, from, to);
   const beforeCash = cashFigures(data, previous.from, previous.to);
   const owe = balancesAt(data, asOf);
@@ -568,15 +427,15 @@ export function businessReport(
   const repOnly = filters.salesRepId !== null;
 
   const summaryRows: BusinessRow[] = [
-    compare("Revenue", "revenue", now.revenue, before.revenue, now.invoices.map(invoiceRecord)),
+    compare("Revenue", "revenue", a.revenue, b.revenue, now.invoices.map(invoiceRecord)),
   ];
   if (show.margin) {
     summaryRows.push(
       compare(
         "Cost of goods",
         "cogs",
-        now.cost,
-        before.cost,
+        a.cost,
+        b.cost,
         now.invoices.map((i) => ({ ...invoiceRecord(i), amount: moneyString(dec(i.cost).times(sign(i))) })),
       ),
     );
@@ -655,7 +514,7 @@ export function businessReport(
     },
   ];
 
-  if (show.margin && data.locations.length > 0 && !repOnly)
+  if (show.margin && (data.locations.length > 0 || now.shared.has(NO_LOCATION)) && !repOnly)
     sections.push(profitByLocation(data, now, locationIds, show.payroll));
   sections.push(...revenueSections(look, now, show));
   if (!repOnly) {
@@ -687,7 +546,12 @@ function withTotal(rows: BusinessRow[], columns: BusinessColumn[]): BusinessRow 
  * always add up to the company's net profit (the week-18 gate; ADR 0055). Shared costs only ever go
  * to live locations, because `weightsFor` is given the live ones.
  */
-function profitByLocation(data: BusinessData, f: Figures, locationIds: string[], payroll: boolean): BusinessSection {
+function profitByLocation(
+  data: BusinessData,
+  f: ProfitFigures,
+  locationIds: string[],
+  payroll: boolean,
+): BusinessSection {
   const live = data.locations
     .filter((l) => locationIds.length === 0 || locationIds.includes(l.id))
     .map((l) => ({ id: l.id, name: l.name }));
@@ -699,6 +563,8 @@ function profitByLocation(data: BusinessData, f: Figures, locationIds: string[],
           .filter((id) => !liveIds.has(id))
           .sort()
           .map((id) => ({ id, name: REMOVED_LOCATION }));
+  // Costs with nowhere to be split stay the company's; no location filter can be on then (rule 6).
+  const companyWide = f.shared.has(NO_LOCATION) ? [{ id: NO_LOCATION, name: COMPANY_WIDE.name }] : [];
   const columns = [
     moneyCol("revenue", "Revenue"),
     moneyCol("cogs", "Cost of goods"),
@@ -706,14 +572,14 @@ function profitByLocation(data: BusinessData, f: Figures, locationIds: string[],
     moneyCol("shared", "Shared expenses"),
     moneyCol("net", "Net profit"),
   ];
-  const rows = [...live, ...removed].map((l) => {
+  const rows = [...live, ...removed, ...companyWide].map((l) => {
     const own = f.invoices.filter((i) => soldAt(i) === l.id);
     const revenue = sum(own.map((i) => dec(i.subtotal).times(sign(i))));
     const cost = sum(own.map((i) => dec(i.cost).times(sign(i))));
     const direct = (f.direct.get(l.id) ?? dec(0)).plus(f.people.get(l.id) ?? 0).plus(f.badDebts.get(l.id) ?? 0);
     const shared = f.shared.get(l.id) ?? dec(0);
     return row(
-      l.id,
+      l.id === NO_LOCATION ? COMPANY_WIDE.id : l.id,
       l.name,
       {
         revenue: money(revenue),
@@ -753,7 +619,7 @@ function profitByLocation(data: BusinessData, f: Figures, locationIds: string[],
  * Revenue and margin by product category and by salesperson (rule 15). Each row's values hold only
  * the visible columns: without `margin` there is no margin value at all (ADR 0055 S7).
  */
-function revenueSections(look: Lookups, f: Figures, show: BusinessVisibility): BusinessSection[] {
+function revenueSections(look: Lookups, f: ProfitFigures, show: BusinessVisibility): BusinessSection[] {
   const columns = [moneyCol("revenue", "Revenue"), ...(show.margin ? [moneyCol("margin", "Margin")] : [])];
   const group = (key: (i: BusinessInvoice, line: SalesLine) => string, label: (k: string) => string): BusinessRow[] => {
     const totals = new Map<string, { revenue: Dec; cost: Dec; invoices: Set<BusinessInvoice> }>();
@@ -810,7 +676,7 @@ function revenueSections(look: Lookups, f: Figures, show: BusinessVisibility): B
  * Expenses by category, vendor and location (rule 16). The column id is `amount`, not the reserved
  * sensitive name `cost`, because an expense's cost is not a sensitive figure (ADR 0055 S7).
  */
-function expenseSections(look: Lookups, f: Figures, vendor: (id: string | null) => string): BusinessSection[] {
+function expenseSections(look: Lookups, f: ProfitFigures, vendor: (id: string | null) => string): BusinessSection[] {
   const columns = [moneyCol("amount", "Cost")];
   const group = (key: (e: BusinessExpense) => string, label: (k: string) => string) => {
     const by = new Map<string, BusinessExpense[]>();
@@ -956,7 +822,7 @@ function taxesSection(data: BusinessData, from: string, to: string, asOf: string
   return { key: "taxes", title: "Taxes", note: null, columns, rows, total: null, chartColumn: null };
 }
 
-function peopleSection(f: Figures): BusinessSection {
+function peopleSection(f: ProfitFigures): BusinessSection {
   const columns = [moneyCol("amount", "Amount")];
   const records = f.payLines.map((l) => ({ date: l.month, label: l.name, amount: money(l.amount), href: l.href }));
   const rows = [

@@ -39,10 +39,14 @@ import {
 } from "./kit";
 import { CASH, movedBy } from "./ledger";
 
-/** Every payment the flow records waits, because the Sales role's data scope is own (payments.service.ts). */
-const WAITS: PaymentOutcome = {
-  status: "pending",
-  why: "a payment recorded by someone whose scope is own waits for verification, whatever the amount",
+/**
+ * Every payment the flow records counts at once: Grace's scope is all, and each amount is under
+ * Summit's $1,000 approval threshold (payments.service.ts). Sales views payments but does not record
+ * them (ADR 0061 decision 3).
+ */
+const COUNTS: PaymentOutcome = {
+  status: "confirmed",
+  why: "the accountant's payment under Summit's $1,000 threshold counts at once",
 };
 
 /** The quote's status pill in the page header. */
@@ -53,16 +57,6 @@ function quoteStatus(page: Page): Locator {
 /** How many of the person's in-app notes ask to verify a payment on this invoice. */
 function toVerify(notes: readonly InAppNote[], invoiceId: string): number {
   return notes.filter((n) => n.eventKey === "payment.to_verify" && n.href === `/sales/invoices/${invoiceId}`).length;
-}
-
-/** Confirms a waiting payment from Finance → Payments to verify, as the second person. */
-async function confirmInQueue(page: Page, payment: Payment): Promise<void> {
-  await page.goto("/finance?view=payments");
-  await page.getByPlaceholder("Search payments").fill(payment.number);
-  const answer = waitForAnswer<Payment>(page, "POST", new RegExp(`^/api-proxy/payments/${payment.id}/review$`));
-  await page.getByRole("button", { name: `Confirm ${payment.number}`, exact: true }).click();
-  expect((await answer).status).toBe("confirmed");
-  await expect(page.getByText(`${payment.number} confirmed`, { exact: true })).toBeVisible();
 }
 
 /** Opens Payments received for This month, narrowed to the customer, and returns the answer and its table. */
@@ -86,20 +80,22 @@ function rowsWith(report: Report, reference: string): Record<string, string>[] {
 /**
  * Flow F1 (mirrors demo spec H flow 1 and G3 flow 1; session log 2026-11-16-0200, "The seven
  * flows"): a salesperson adds a customer and a job site while quoting, the quote goes Draft →
- * Pending → Accepted → invoice with a roll on hold; her deposit and final payment each wait (own
- * scope) until the accountant confirms them; the warehouse cuts the roll; the accountant then voids
- * the deposit. The ledger, the bell, the stock, Payments received and the audit log are checked
- * after each step, all from the answers. Rule 5 is checked the other way too: Priya's quote request
- * and its answer carry no cost, and her summary shows no margin (B1, session log 2026-11-16-2320). A
- * run that stops midway is undone by three clean-ups, newest first: a final payment still waiting is
- * rejected, the deposit is voided, and the invoice is voided, which releases its hold. A complete run
- * leaves them all refused as already done (400), so its books stay as step 8 checked them.
+ * Pending → Accepted → invoice with a roll on hold. Priya sees the invoice's payments but has no
+ * Record payment (ADR 0061 decision 3): the accountant records the deposit and the final payment,
+ * each counted at once; the warehouse cuts the roll; the accountant then voids the deposit. The
+ * ledger, the bell, the stock, Payments received and the audit log are checked after each step, all
+ * from the answers. Rule 5 is checked the other way too: Priya's quote request and its answer carry
+ * no cost, and her summary shows no margin (B1, session log 2026-11-16-2320). A run that stops
+ * midway is undone by two clean-ups, newest first: the deposit is voided, and the invoice is voided,
+ * which releases its hold (refused once confirmed money stays on it). The final payment has none:
+ * voiding it after a passing run would post after step 8. A complete run leaves them all refused as
+ * already done (400), so its books stay as step 8 checked them.
  */
 flowTest.describe("flow F1: sales from a new customer to the cut and a voided deposit", () => {
   resetAuthAround([ACCOUNTANT_EMAIL, SALES_EMAIL, WAREHOUSE_EMAIL]);
 
   flowTest(
-    "quote to invoice, deposit and final payment confirmed by a second person, roll cut, deposit voided",
+    "quote to invoice, deposit and final payment recorded by the accountant, roll cut, deposit voided",
     { tag: FLOW_TAG },
     async ({ personas }) => {
       flowTest.setTimeout(180_000);
@@ -209,42 +205,42 @@ flowTest.describe("flow F1: sales from a new customer to the cut and a voided de
         return tb;
       });
 
-      const paidDeposit = await flowTest.step("2. Priya records the deposit; it waits for verification", async () => {
+      await flowTest.step("2. Priya sees the invoice's payments but cannot record one (ADR 0061)", async () => {
         const { page } = priya;
+        await expect(page.getByRole("region", { name: "Payments" })).toBeVisible();
+        await expect(page.getByRole("button", { name: "Record payment", exact: true })).toHaveCount(0);
+      });
+
+      const paidDeposit = await flowTest.step("2. Grace records the deposit; it counts at once", async () => {
+        const { page } = grace;
+        await page.goto(`/sales/invoices/${invoice.id}`);
         await page.getByRole("button", { name: "Update status" }).click();
         await page.getByRole("menuitem", { name: "Record deposit" }).click();
         await expect(
           page.getByRole("dialog", { name: "Record deposit" }).getByLabel("Amount", { exact: true }),
         ).toHaveValue(deposit);
-        const payment = await savePayment(page, invoice.number, depositRef, WAITS);
+        const payment = await savePayment(page, invoice.number, depositRef, COUNTS);
         personas.onCleanup(`void ${payment.number}`, () =>
           grace.request.post(`/api-proxy/payments/${payment.id}/void`, { data: { reason: "e2e flow clean-up" } }),
         );
         expect(payment.kind).toBe("deposit");
         expect(payment.amount).toBe(deposit);
-        await expect(invoicePills(page)).toHaveText(["Pending verification"]);
+        await expect(invoicePills(page)).toHaveText(["Deposit paid"]);
         return payment;
       });
 
-      const t2 = await flowTest.step(
-        "2. nothing posts while it waits, and Grace's bell asks her to verify",
+      const t3 = await flowTest.step(
+        "3. the deposit posts, nobody is asked to verify it; Priya sees Deposit paid",
         async () => {
           const tb = await trialBalance(grace.request);
-          expectLedgerMoved(t1, tb, {});
+          expectLedgerMoved(t1, tb, { [CASH]: deposit, accounts_receivable: dec(deposit).negated() });
           expect(toVerify(n0, invoice.id), "no note for this invoice before").toBe(0);
-          expect(toVerify(await notifications(grace.request), invoice.id), "one payment.to_verify note").toBe(1);
+          expect(toVerify(await notifications(grace.request), invoice.id), "no payment.to_verify note").toBe(0);
+          await priya.page.reload();
+          await expect(invoicePills(priya.page)).toHaveText(["Deposit paid"]);
           return tb;
         },
       );
-
-      const t3 = await flowTest.step("3. Grace confirms the deposit; Priya sees Deposit paid", async () => {
-        await confirmInQueue(grace.page, paidDeposit);
-        const tb = await trialBalance(grace.request);
-        expectLedgerMoved(t2, tb, { [CASH]: deposit, accounts_receivable: dec(deposit).negated() });
-        await priya.page.reload();
-        await expect(invoicePills(priya.page)).toHaveText(["Deposit paid"]);
-        return tb;
-      });
 
       const { t4, cost } = await flowTest.step("4. Cole cuts the held roll", async () => {
         const cole = await personas.open(WAREHOUSE_EMAIL);
@@ -305,39 +301,27 @@ flowTest.describe("flow F1: sales from a new customer to the cut and a voided de
         return { t4: tb, cost: goods };
       });
 
-      const paidRest = await flowTest.step("5. Priya records the final payment; it waits too", async () => {
-        const { page } = priya;
-        await page.reload();
+      const paidRest = await flowTest.step("5. Grace records the final payment; it counts at once", async () => {
+        const { page } = grace;
+        await page.goto(`/sales/invoices/${invoice.id}`);
         await page.getByRole("button", { name: "Record payment", exact: true }).click();
         await expect(
           page.getByRole("dialog", { name: "Record payment" }).getByLabel("Amount", { exact: true }),
         ).toHaveValue(rest);
-        const payment = await savePayment(page, invoice.number, finalRef, WAITS);
-        // Rejected only while it waits: voiding a confirmed one would post entries after a passing run.
-        personas.onCleanup(`reject ${payment.number} if it still waits`, () =>
-          grace.request.post(`/api-proxy/payments/${payment.id}/review`, {
-            data: { action: "reject", reason: "e2e flow clean-up" },
-          }),
-        );
+        // No clean-up: it is confirmed at once, and voiding it would post entries after a passing run.
+        const payment = await savePayment(page, invoice.number, finalRef, COUNTS);
         expect(payment.kind).toBe("payment");
         expect(payment.amount).toBe(rest);
-        await expect(invoicePills(page)).toHaveText(["Pending verification", "Deposit paid"]);
+        await expect(invoicePills(page)).toHaveText(["Paid"]);
         return payment;
       });
 
-      const t5 = await flowTest.step("5. nothing posts while it waits; a second note asks Grace", async () => {
-        const tb = await trialBalance(grace.request);
-        expectLedgerMoved(t4, tb, {});
-        expect(toVerify(await notifications(grace.request), invoice.id), "two payment.to_verify notes").toBe(2);
-        return tb;
-      });
-
       const t6 = await flowTest.step(
-        "6. Grace confirms the final payment; Paid, and both in Payments received",
+        "6. the final payment posts; Priya sees Paid, and both are in Payments received",
         async () => {
-          await confirmInQueue(grace.page, paidRest);
           const tb = await trialBalance(grace.request);
-          expectLedgerMoved(t5, tb, { [CASH]: rest, accounts_receivable: dec(rest).negated() });
+          expectLedgerMoved(t4, tb, { [CASH]: rest, accounts_receivable: dec(rest).negated() });
+          expect(toVerify(await notifications(grace.request), invoice.id), "still no payment.to_verify note").toBe(0);
           await priya.page.reload();
           await expect(invoicePills(priya.page)).toHaveText(["Paid"]);
 
@@ -394,8 +378,6 @@ flowTest.describe("flow F1: sales from a new customer to the cut and a voided de
           ["Converted quote to invoice", "Recorded deposit", "Recorded payment", "Issued stock", "Voided payment"],
           since,
         );
-        for (const payment of [paidDeposit, paidRest])
-          await expectAuditRows(grace.page, payment.number, ["Confirmed payment"], since);
       });
       assertSameCompanyDay(start);
     },

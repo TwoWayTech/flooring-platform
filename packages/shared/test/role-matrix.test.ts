@@ -36,6 +36,14 @@ describe("default role matrix", () => {
     }
   });
 
+  it("lets Sales view customer payments but not record them (ADR 0061 decision 3)", () => {
+    const held = roleTemplate("sales").permissions;
+    expect(held).toContain("sales.payment.view");
+    expect(held.filter((p) => p.startsWith("sales.payment.") && p !== "sales.payment.view")).toEqual([]);
+    const recorders = ROLE_KEYS.filter((k) => roleTemplate(k).permissions.includes("sales.payment.record"));
+    expect(recorders.sort()).toEqual(["accountant", "manager", "owner"]);
+  });
+
   it("lets only HR and the Owner see pay rates", () => {
     const withPay = ROLE_KEYS.filter((k) => roleTemplate(k).permissions.includes(SENSITIVE.payRate));
     expect(withPay.sort()).toEqual(["hr", "owner"]);

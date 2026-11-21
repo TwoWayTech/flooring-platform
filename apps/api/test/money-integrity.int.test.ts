@@ -144,15 +144,17 @@ describe("money integrity on an API-only company (whole-product check; needs the
     // R2: cost of goods is the invoices' cost at sale (ADR 0055), not the ledger's cost at issue.
     const signedCost = sum(inMonth.map((i) => (i.isReturn ? dec(i.cost).negated() : dec(i.cost))));
     expect(figure(row.cogs).toFixed(2), "R2 P&L cost of goods").toBe(signedCost.toFixed(2));
-    // R3: expenses are amounts before tax; the ledger books amount plus tax, and write-offs (F-a).
+    // R3: expenses are the Business report's operating expenses (ADR 0061 decision 2, reports.md rules 6
+    // to 9): cost expenses at amount plus tax, plus write-offs, which is what the ledger books. The P&L no
+    // longer differs from the ledger here (it used to leave out tax and write-offs, F-a).
     const amounts = sum(costExpenses.map((e) => e.amount));
     const taxes = sum(costExpenses.map((e) => e.tax || "0"));
-    expect(figure(row.expenses).toFixed(2), "R3 P&L expenses").toBe(amounts.toFixed(2));
     const writtenOff = sum(books.adjustments.filter((a) => a.kind === "write_off").map((a) => a.amount));
-    expect(ledgerOperating.minus(figure(row.expenses)).toFixed(2), "R3 ledger less P&L expenses (F-a)").toBe(
-      taxes.plus(writtenOff).toFixed(2),
+    expect(taxes.gt(0) && writtenOff.gt(0), "the prelude made tax and a write-off happen").toBe(true);
+    expect(figure(row.expenses).toFixed(2), "R3 P&L expenses: amount + tax + write-offs").toBe(
+      amounts.plus(taxes).plus(writtenOff).toFixed(2),
     );
-    expect(taxes.gt(0) && writtenOff.gt(0), "the prelude made both differences happen").toBe(true);
+    expect(figure(row.expenses).toFixed(2), "R3 P&L expenses equal the ledger").toBe(ledgerOperating.toFixed(2));
     // R5: the P&L's own lines agree.
     expect(figure(row.grossMargin).toFixed(2), "R5 P&L gross").toBe(
       figure(row.revenue).minus(figure(row.cogs)).toFixed(2),
@@ -171,16 +173,22 @@ describe("money integrity on an API-only company (whole-product check; needs the
     // R5: gross and net from the report's own lines.
     expect(value("gross").toFixed(2), "R5 Business gross").toBe(value("revenue").minus(value("cogs")).toFixed(2));
     expect(value("net").toFixed(2), "R5 Business net").toBe(value("gross").minus(value("opex")).toFixed(2));
+    // R3: the P&L month and the Business report give one profit (ADR 0061 decision 2).
+    expect(figure(row.expenses).toFixed(2), "R3 P&L expenses = Business operating expenses").toBe(
+      value("opex").toFixed(2),
+    );
+    expect(figure(row.netIncome).toFixed(2), "R3 P&L net = Business net").toBe(value("net").toFixed(2));
     // R6: location profits add up to company profit (week-18 gate, R-GATE).
     const locations = business.sections.find((s) => s.key === "locations")!;
     expect(dec(locations.total!.values.net!).toFixed(2), "R6 locations net").toBe(value("net").toFixed(2));
     expect(dec(locations.total!.values.revenue!).toFixed(2), "R6 locations revenue").toBe(value("revenue").toFixed(2));
-    // By design (ADR 0055): the ledger's cost of goods is cost at issue, the reports' cost at sale.
+    // By design (ADR 0055): the ledger's cost of goods is cost at issue, the reports' cost at sale. That is
+    // now the only difference from the ledger; operating expenses agree (R3, R4).
     const ledgerCogs = balanceOf(books.trial, "cost_of_goods_sold");
     await context.annotate(
       `By design: ledger cost of goods ${ledgerCogs.toFixed(2)} (at issue) vs reports ${signedCost.toFixed(2)} (at sale); ` +
-        `ledger operating expenses ${ledgerOperating.toFixed(2)} vs P&L ${figure(row.expenses).toFixed(2)} ` +
-        `(tax ${taxes.toFixed(2)}, write-offs ${writtenOff.toFixed(2)}).`,
+        `operating expenses ${ledgerOperating.toFixed(2)} in the ledger and both reports ` +
+        `(tax ${taxes.toFixed(2)}, write-offs ${writtenOff.toFixed(2)} included).`,
     );
   });
 
