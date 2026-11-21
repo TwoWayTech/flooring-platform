@@ -3,6 +3,7 @@ import {
   sum,
   overtimeRuleFor,
   splitOvertime,
+  workweekStartOf,
   type Employee,
   type OvertimeRule,
   type Timesheet,
@@ -18,6 +19,42 @@ export interface WeekRow {
   split: ReturnType<typeof splitOvertime>;
   /** Overtime plus double time, as a decimal string (CLAUDE.md rule 6). */
   extraHours: string;
+}
+
+/** HR Home's people and hours figures (spec C1 HR Home). */
+export interface HrHomeFigures {
+  /** Active W-2 employees, the headcount; contractors have their own figure. */
+  staff: Employee[];
+  contractors: number;
+  /** The current workweek's first day, the week the hours are for. */
+  week: string;
+  /** Hours on this week's timesheets, any status, as a decimal string (CLAUDE.md rule 6). */
+  hours: string;
+  overtime: string;
+}
+
+/**
+ * HR Home's figures (click-through #65). Hours are the timesheets of the workweek holding today,
+ * the same sheets the pay period lists, so a week with no timesheets reads 0 rather than an older
+ * week's total. Headcount leaves 1099 contractors out; they are counted on their own.
+ */
+export function hrHomeFigures(
+  employees: readonly Employee[],
+  sheets: readonly Timesheet[],
+  today: string,
+  workweekStartDay: number,
+  companyRule: OvertimeRule,
+): HrHomeFigures {
+  const active = employees.filter((e) => e.status !== "terminated");
+  const week = workweekStartOf(today, workweekStartDay);
+  const rows = weekRows(sheets, employees, week, companyRule);
+  return {
+    staff: active.filter((e) => e.workerType !== "1099"),
+    contractors: active.filter((e) => e.workerType === "1099").length,
+    week,
+    hours: sum(rows.map((r) => r.total)).toString(),
+    overtime: sum(rows.map((r) => r.extraHours)).toString(),
+  };
 }
 
 /** Week starts that have timesheets, newest first. */

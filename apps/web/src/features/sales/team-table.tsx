@@ -74,7 +74,9 @@ export function TeamTable({
     { id: "quotesSent", header: "Quotes sent", kind: "count", value: (r) => r.quotesSent, total: true },
     { id: "conversion", header: "Conversion", kind: "percent", value: (r) => r.conversionPct },
     money("averageDeal", "Average deal", false),
-    money("earned", "Commission earned"),
+    // A manager's overrides on their team's sales count here, so a person with no plan of their own
+    // can show commission; the header says so (click-through #50; commissions.md rule 17).
+    money("earned", "Commission (incl. overrides)"),
     money("paid", "Commission paid"),
     money("pending", "Commission pending"),
   ];

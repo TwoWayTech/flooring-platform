@@ -73,3 +73,27 @@ describe("commissions (spec E2)", () => {
     expect(none.find((r) => r.userId === sales.id)!.earned).toBe("0.00");
   });
 });
+
+describe("Sales → Team average deal (click-through #50)", () => {
+  const rep = summit.users.find((u) => u.roleIds.some((r) => r.endsWith("-role-sales")))!;
+  const base = summit.invoices.find((i) => i.salesRepId === rep.id && !i.isReturn && !i.voidedAt)!;
+  const day = base.issuedAt;
+  const deal = { ...base, id: "deal", subtotal: "803.09", total: "803.09" };
+  const credit = { ...base, id: "credit", isReturn: true, subtotal: "100.00", total: "100.00" };
+  const row = (invoices: (typeof summit.invoices)[number][]) =>
+    teamStats(
+      { users: summit.users, invoices, payments: [], quotes: [], commission: new Map() },
+      { from: day, to: day, today },
+    ).find((r) => r.userId === rep.id)!;
+
+  it("is the Sales figure, credit notes taken off, over the deals", () => {
+    const withCredit = row([deal, credit]);
+    expect(withCredit.sales).toBe("703.09");
+    expect(withCredit.averageDeal).toBe("703.09");
+  });
+
+  it("is the sale itself when there is no credit, and zero with no deal", () => {
+    expect(row([deal]).averageDeal).toBe("803.09");
+    expect(row([credit]).averageDeal).toBe("0.00");
+  });
+});

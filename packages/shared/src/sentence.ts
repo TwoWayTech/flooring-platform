@@ -11,3 +11,11 @@ export function endSentence(text: string): string {
   if (trimmed === "") return trimmed;
   return ENDED.test(trimmed) ? trimmed : `${trimmed}.`;
 }
+
+/**
+ * The noun for a count: `one` for exactly 1, `many` otherwise, so a message never reads
+ * "1 flagged sheets" (click-through #46). Irregular plurals are passed in whole.
+ */
+export function plural(count: number, one: string, many: string): string {
+  return count === 1 ? one : many;
+}

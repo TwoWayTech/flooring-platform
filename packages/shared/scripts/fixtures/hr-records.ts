@@ -79,6 +79,8 @@ function withPeople(ctx: GenContext, rng: Rng, f: CompanyFixtures): Employee[] {
       managerId: user ? e.managerId : (managerUser?.employeeId ?? e.managerId),
       flsaStatus: e.workerType === "1099" ? "not_applicable" : exempt ? "exempt" : "non_exempt",
       exemptionBasis: exempt ? basis : null,
+      // The Payroll ID a provider knows the person by; the pay export's employee_external_id (click-through #48).
+      externalId: `${ctx.company.idPrefix.toUpperCase()}-${1001 + i}`,
       homeLocationId: user?.defaultLocationId ?? firstWarehouse,
       commissionVisible: i === 2 && f.invoices.length > 0 ? true : null,
       birthDate: birthDate(rng, ctx.anchor, i),

@@ -79,7 +79,7 @@ test.describe("dashboard", () => {
 
   test("Sales → Team shows commission earned, paid and pending", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/sales?view=team");
-    for (const name of ["Paid revenue", "Commission earned", "Commission pending"]) {
+    for (const name of ["Paid revenue", "Commission (incl. overrides)", "Commission pending"]) {
       await expect(page.getByRole("button", { name: `${name}, column options` })).toBeVisible();
     }
     await expect(page.locator("tbody tr").first()).toBeVisible();

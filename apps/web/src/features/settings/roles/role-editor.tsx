@@ -3,7 +3,16 @@
 import { useState } from "react";
 import { Copy, Lock, RotateCcw, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { permissionDef, PRODUCT_MODULES, type DataScope, type PermissionKey, type Role } from "@workspace/shared";
+import {
+  permissionDef,
+  PRODUCT_MODULES,
+  roleMfaChange,
+  roleMfaWarning,
+  type DataScope,
+  type PermissionKey,
+  type Role,
+  type User,
+} from "@workspace/shared";
 import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
@@ -26,6 +35,9 @@ interface RoleEditorProps {
   /** A new or copied role that has not been saved yet. */
   isNew: boolean;
   canManage: boolean;
+  /** The company's roles and users, to count who must set up two-step sign-in after a save. */
+  roles: readonly Role[];
+  users: readonly User[];
   onCopy: (role: Role) => void;
   onSaved: (role: Role) => void;
   onDeleted: () => void;
@@ -35,10 +47,12 @@ interface RoleEditorProps {
  * Edits one role: name, data scope and the permission matrix. Saving asks for a step-up code
  * (blueprint rule 5); the ApiClient refuses any permission the editor does not hold.
  */
-export function RoleEditor({ role, isNew, canManage, onCopy, onSaved, onDeleted }: RoleEditorProps) {
+export function RoleEditor({ role, isNew, canManage, roles, users, onCopy, onSaved, onDeleted }: RoleEditorProps) {
   const { company, access, session } = useWorkspace();
   const [draft, setDraft] = useState(role);
   const [confirming, setConfirming] = useState(false);
+  // Warn before a save makes the role's holders set up two-step sign-in (click-through #60).
+  const mfaChange = confirming ? roleMfaChange(role, draft, roles, users) : null;
   const editable = canManage && !role.owner;
   const dirty = isNew || draft !== role;
 
@@ -189,6 +203,7 @@ export function RoleEditor({ role, isNew, canManage, onCopy, onSaved, onDeleted 
         action={`Saving role ${draft.name}`}
         onOpenChange={setConfirming}
         onConfirm={save}
+        notice={mfaChange ? roleMfaWarning(mfaChange) : null}
       />
     </Panel>
   );

@@ -31,7 +31,9 @@ import { useFormatDate } from "@/lib/use-format-date";
 import { HrTabs } from "../hr-tabs";
 import { Pick } from "../pick";
 import { PlanFormDialog } from "./plan-form-dialog";
+import { monthName } from "./month-name";
 import { PlanTerms } from "./plan-terms";
+import { statementFigureColumns } from "./statement-columns";
 import { StatementSheet } from "./statement-sheet";
 
 const STATUS = {
@@ -39,27 +41,6 @@ const STATUS = {
   approved: { tone: "brand", icon: CircleCheck, label: "Approved" },
   paid: { tone: "success", icon: Wallet, label: "Paid" },
 } as const;
-
-const money = (
-  id: keyof CommissionStatementRow,
-  header: string,
-  hidden = false,
-): ColumnSpec<CommissionStatementRow> => ({
-  id,
-  header,
-  kind: "money",
-  value: (r) => String(r[id]),
-  total: true,
-  hidden,
-});
-
-function monthName(month: string) {
-  return new Date(`${month}-15T00:00:00Z`).toLocaleDateString("en-US", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
 
 function AssignDialog({
   users,
@@ -154,15 +135,17 @@ export function CommissionsPage() {
   if (!can("hr.commission.view")) return <NoAccess />;
   const canManage = can("hr.commission.manage");
 
+  const rows = (data.data?.statements ?? []).filter(
+    (s) => s.month === month && (s.lines.length > 0 || s.status !== "draft"),
+  );
   const statementColumns: ColumnSpec<CommissionStatementRow>[] = [
     { id: "name", header: "Person", value: (r) => r.name, cell: (r) => <span className="font-medium">{r.name}</span> },
     { id: "plan", header: "Plan", value: (r) => r.planName ?? "None" },
-    money("earned", "Earned"),
-    money("override", "Overrides", true),
-    money("reversal", "Reversals"),
-    money("adjustment", "Adjustments", true),
-    money("draw", "Draw", true),
-    money("payable", "Payable"),
+    ...statementFigureColumns(rows).map((c): ColumnSpec<CommissionStatementRow> => ({
+      ...c,
+      kind: "money",
+      total: true,
+    })),
     {
       id: "status",
       header: "Status",
@@ -206,9 +189,6 @@ export function CommissionsPage() {
         ),
     },
   ];
-  const rows = (data.data?.statements ?? []).filter(
-    (s) => s.month === month && (s.lines.length > 0 || s.status !== "draft"),
-  );
   const open = rows.find((r) => r.userId === openUser);
   const canBeAssigned = (data.data?.people ?? []).filter((p) => p.active);
 

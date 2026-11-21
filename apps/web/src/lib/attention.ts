@@ -8,6 +8,7 @@ import {
   type PermissionKey,
   type ProductKey,
   filteredHref,
+  plural,
 } from "@workspace/shared";
 import type { ApiClient } from "./api/contract";
 import { loadSalesLedger } from "./sales-ledger";
@@ -37,9 +38,6 @@ interface Check {
   products: ProductKey[];
   load: (client: ApiClient, today: string) => Promise<Omit<AttentionItem, "key">>;
 }
-
-/** The noun for a count: "overdue invoice" for 1, "overdue invoices" otherwise. */
-const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 /**
  * The "Needs attention" checks (spec "Dashboard": overdue invoices, low rolls, expiring

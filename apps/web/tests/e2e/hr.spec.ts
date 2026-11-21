@@ -9,6 +9,8 @@ test.describe("HR Suite", { tag: HR_TAG }, () => {
     await signInAs(page, HARBOR_OWNER);
     await expect(page.getByRole("heading", { name: "HR dashboard" })).toBeVisible();
     await expect(page.getByText("Headcount", { exact: true })).toBeVisible();
+    // The hours are this workweek's timesheets, and the label names the week (click-through #65).
+    await expect(page.getByText(/^Timesheet hours, week of /)).toBeVisible();
   });
 
   test("the HR manager sees pay rates", async ({ page }) => {

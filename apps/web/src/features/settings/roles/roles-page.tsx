@@ -100,6 +100,8 @@ export function RolesPage() {
         role={selected}
         isNew={selected === unsaved}
         canManage={canManage}
+        roles={roles}
+        users={users}
         onCopy={(role) => startDraft(role)}
         onSaved={(role) => {
           if (unsaved?.id === role.id) setUnsaved(null);

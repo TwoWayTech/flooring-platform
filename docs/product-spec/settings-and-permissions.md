@@ -329,7 +329,7 @@ stateDiagram-v2
 
 **Create or duplicate a role.** `draftRole` in `apps/web/src/features/settings/roles/roles-page.tsx` builds an unsaved role with `key: "custom"`, `system: false` and `owner: false`. A new role starts empty with scope `own`. A copy of the Owner role starts empty too. Save role asks for a step-up code, then calls `saveRole`.
 
-**Edit a role.** `RoleEditor` shows the matrix by module, resource and action. `lockOf` greys a cell with one of four reasons: `plan` (outside the ceiling), `module` (module off), `not_held` (the editor lacks it and the role does not already have it), `owner` (the Owner role, or the viewer cannot manage roles). The name of a system role cannot be edited.
+**Edit a role.** `RoleEditor` shows the matrix by module, resource and action. `lockOf` greys a cell with one of four reasons: `plan` (outside the ceiling), `module` (module off), `not_held` (the editor lacks it and the role does not already have it), `owner` (the Owner role, or the viewer cannot manage roles). The name of a system role cannot be edited. When the save would make two-step sign-in mandatory for the role (`roleMfaChange` in `packages/shared/src/permissions/mfa.ts`: it did not need it, and now holds a key in `MFA_REQUIRED_KEYS`), the step-up confirmation warns first, naming the permissions and how many of its active users have not set it up and need it for no other role, so will have to at their next sign-in (`roleMfaWarning`; click-through #60). With the step-up switched off in the demo there is no confirmation, so no warning.
 
 **Reset a role.** Reset to default calls `resetRole` with no step-up code. It restores name, description, data scope and permissions from the template, limited to the product, and passes through `saveRole`.
 

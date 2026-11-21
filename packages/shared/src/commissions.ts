@@ -16,7 +16,9 @@ export interface TeamRow {
   margin: string | null;
   quotesSent: number;
   conversionPct: string;
+  /** `sales` (credit notes taken off) over the period's invoices that are not credit notes. */
   averageDeal: string;
+  /** Every commission line in the range: the person's own, their manager overrides and reversals. */
   earned: string;
   paid: string;
   pending: string;
@@ -75,6 +77,8 @@ export function teamStats(
       const commission = inputs.commission.get(user.id);
       const sent = inputs.quotes.filter((q) => q.salesRepId === user.id && q.sentAt && inRange(q.sentAt));
       const converted = sent.filter((q) => q.status === "converted").length;
+      // Average deal is the Sales figure (credit notes taken off) over the deals, so the two agree
+      // (click-through #50); credit notes are not deals of their own.
       const deals = issued.filter((i) => !i.isReturn);
       return {
         userId: user.id,
@@ -84,7 +88,7 @@ export function teamStats(
         margin: cost === null ? null : moneyString(sales.minus(cost)),
         quotesSent: sent.length,
         conversionPct: sent.length ? dec(converted).div(sent.length).times(100).toDecimalPlaces(1).toString() : "0",
-        averageDeal: deals.length ? moneyString(sum(deals.map((i) => i.subtotal)).div(deals.length)) : "0.00",
+        averageDeal: deals.length ? moneyString(sales.div(deals.length)) : "0.00",
         earned: commission?.earned ?? "0.00",
         paid: commission?.paid ?? "0.00",
         pending: commission?.pending ?? "0.00",

@@ -166,6 +166,8 @@ export function EmployeeSheet({
           <dl className="grid grid-cols-2 gap-3 text-sm">
             <Fact label="Employment">{employee.workerType === "w2" ? "W-2" : "1099 contractor"}</Fact>
             <Fact label="Overtime status">{FLSA[employee.flsaStatus]}</Fact>
+            {/* The pay export's employee_external_id; set by the employee import (hr.md, click-through #48). */}
+            <Fact label="Payroll ID">{employee.externalId ?? "Not set. The employee import sets it."}</Fact>
             <Fact label="Manager">{manager?.name ?? "None"}</Fact>
             <Fact label="Home location">{location?.name ?? "Not set"}</Fact>
             <Fact label="Works in">{stateName(employee.state)}</Fact>

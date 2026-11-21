@@ -36,7 +36,7 @@ Effective access is role permissions, intersected with the company ceiling and e
 
 Warehouse can receive goods but has no `purchasing.bill.view`, so it sees no bills tab. Purchasing can record a payment but cannot confirm or void one.
 
-Data scope does not narrow any purchasing collection. `FILTERS` in `apps/web/src/lib/api/demo/scope.ts` has no entry for them. `DemoStore.list` puts no permission check on them, because they are not in `PRIVATE_COLLECTIONS` in `store.ts`.
+Data scope does not narrow any purchasing collection, so a branch-scoped Warehouse user sees every warehouse's orders. The dashboard's Warehouse today counts orders for the person's default warehouse, which is a convenience, not a scope; the panel names that warehouse and says the order list shows every warehouse (click-through #63). `FILTERS` in `apps/web/src/lib/api/demo/scope.ts` has no entry for them. `DemoStore.list` puts no permission check on them, because they are not in `PRIVATE_COLLECTIONS` in `store.ts`.
 
 The generic `save` refuses `supplierContacts`, `purchaseOrders`, `receipts`, `bills` and `supplierPayments` through `SAVE_PERMISSIONS` in `permission-rules.ts`. `suppliers` is allowed there for `purchasing.supplier.create` and `purchasing.supplier.edit`, but the screens use `saveSupplier`.
 

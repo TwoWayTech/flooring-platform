@@ -1,4 +1,5 @@
-import type { PermissionKey } from "./catalog";
+import { plural } from "../sentence";
+import { permissionDef, type PermissionKey } from "./catalog";
 import type { DefaultRoleKey } from "./roles";
 
 /**
@@ -43,6 +44,66 @@ export const MFA_MARKER = "mfa";
 /** Whether a role makes MFA mandatory: the Owner role, or any key in MFA_REQUIRED_KEYS. */
 export function roleRequiresMfa(role: { owner: boolean; permissions: readonly string[] }): boolean {
   return role.owner || role.permissions.some((key) => (MFA_REQUIRED_KEYS as readonly string[]).includes(key));
+}
+
+/** The parts of a role `roleMfaChange` reads. */
+type MfaRole = { id: string; owner: boolean; permissions: readonly string[] };
+
+/** What saving a role would change about two-step sign-in for the people who hold it. */
+export interface RoleMfaChange {
+  /** The role's keys that make two-step sign-in mandatory, in catalog order of MFA_REQUIRED_KEYS. */
+  keys: PermissionKey[];
+  /** Active holders of the role. */
+  holders: number;
+  /**
+   * Holders who have not set up two-step sign-in and need none for another role: they are made to
+   * set it up at their next sign-in.
+   */
+  mustEnrol: number;
+}
+
+/**
+ * Whether saving `after` over `before` makes two-step sign-in mandatory for the role's holders,
+ * and for how many of them (click-through #60): the save confirmation warns before the change
+ * reaches anyone. Null when the role needed it already or still does not. Disabled users are left
+ * out; a holder whose other roles already need it is counted as a holder only.
+ */
+export function roleMfaChange(
+  before: MfaRole,
+  after: MfaRole,
+  roles: readonly MfaRole[],
+  users: readonly { roleIds: readonly string[]; status: string; mfaEnrolled: boolean }[],
+): RoleMfaChange | null {
+  if (roleRequiresMfa(before) || !roleRequiresMfa(after)) return null;
+  const others = roles.filter((role) => role.id !== after.id);
+  const holders = users.filter((u) => u.status !== "disabled" && u.roleIds.includes(after.id));
+  const needsAlready = (u: (typeof holders)[number]) =>
+    others.some((role) => u.roleIds.includes(role.id) && roleRequiresMfa(role));
+  return {
+    keys: MFA_REQUIRED_KEYS.filter((key) => after.permissions.includes(key)),
+    holders: holders.length,
+    mustEnrol: holders.filter((u) => !u.mfaEnrolled && !needsAlready(u)).length,
+  };
+}
+
+/** "a", "a and b", "a, b and c". */
+function listed(items: readonly string[]): string {
+  return items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
+}
+
+/**
+ * The save confirmation's warning for a role that starts needing two-step sign-in (click-through
+ * #60): why, by the permissions that need it, and how many holders must set it up next sign-in.
+ */
+export function roleMfaWarning(change: RoleMfaChange): string {
+  const can = listed(change.keys.map((key) => (permissionDef(key)?.label ?? key).toLowerCase()));
+  const why = `This role will need two-step sign-in, because it can ${can}.`;
+  const { holders, mustEnrol } = change;
+  const users = (n: number) => `${n} ${plural(n, "user", "users")}`;
+  if (holders === 0) return `${why} Anyone given it will have to set it up at their next sign-in.`;
+  if (mustEnrol === 0) return `${why} Its ${users(holders)} already ${plural(holders, "uses", "use")} it.`;
+  if (mustEnrol === holders) return `${why} Its ${users(holders)} will have to set it up at their next sign-in.`;
+  return `${why} ${mustEnrol} of its ${users(holders)} will have to set it up at their next sign-in; the others already use it.`;
 }
 
 const MEMBER_ROLE_SEPARATOR = ",";

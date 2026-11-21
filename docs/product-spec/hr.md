@@ -314,6 +314,8 @@ A blocker is a workweek ending in the period, for a person who needs timesheets 
 
 22. **Timesheet upload rows.** `resolveTimesheet`, `packages/shared/src/import/kinds/timesheets.ts`. The row matches on email, then external ID. A repeated employee and date is refused through `duplicateKey`. These are refused: no match, another person's row in a portal upload, a terminated person, a 1099 worker, hours outside 0 to 24, a week already approved. A blank leaves the day alone and a zero overwrites it.
 
+23. **HR Home figures.** `hrHomeFigures`, `apps/web/src/features/hr/hr-week.ts`. Headcount counts active W-2 people; 1099 contractors have their own figure and are left out of Headcount by department too. The hours are the timesheets, of any status, of the workweek holding today (`workweekStartOf` with `settings.hr.workweekStartDay`), labelled "Timesheet hours, week of …", with their overtime under each person's rule. A week with no timesheets reads 0, as the pay period shows "no timesheet" (click-through #65; before, the figure was the newest week that had any timesheets).
+
 ## Entities and fields
 
 ### Employee (`packages/shared/src/types/hr.ts`)
@@ -330,7 +332,7 @@ A blocker is a workweek ending in the period, for a person who needs timesheets 
 | `hiredAt` | date | |
 | `status` | `active`, `on_leave`, `terminated` | |
 | `managerId` | string or null | Another employee. In the real build every change is also kept, dated, in `employee_manager_history`, so commission overrides follow the manager on each line's day (ADR 0048) |
-| `externalId` | string, optional | Set by import |
+| `externalId` | string, optional | The Payroll ID. Set by the employee import (the seed gives every person one); People → profile shows it read only; the pay exports write it as `employee_external_id` (click-through #48) |
 | `flsaStatus` | `non_exempt`, `exempt`, `not_applicable` | Forced to `not_applicable` for 1099 |
 | `exemptionBasis` | `executive`, `administrative`, `professional`, `outside_sales`, null | |
 | `salaryHoursPerWeek` | number | Forced to 40 in California while `hr.payroll.california` is on (ADR 0050) |
