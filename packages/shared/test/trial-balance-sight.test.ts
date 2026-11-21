@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ALL_PERMISSION_KEYS,
   DEFAULT_ACCOUNTS,
+  CONTRACT_ACCOUNT_KEYS,
   CONTRACT_SOURCE_TYPES,
   PAY_ACCOUNT_KEYS,
   PAY_SOURCE_TYPES,
@@ -53,11 +54,16 @@ describe("who may read the trial balance (ADR 0055 Trial balance, owner question
   it("derives the pay and contract sources from one classification of every source", () => {
     expect([...PAY_SOURCE_TYPES].sort()).toEqual(["commission_statement", "contractor_payment", "pay_period"]);
     expect(CONTRACT_SOURCE_TYPES).toEqual(["contract_billing"]);
-    expect(Object.keys(SOURCE_SIGHT)).toHaveLength(14);
+    // 15 with the opening-balance entry (ADR 0062), which reveals stock at cost like the others.
+    expect(Object.keys(SOURCE_SIGHT)).toHaveLength(15);
+    expect(SOURCE_SIGHT.opening_balance).toBe("cost");
   });
 
-  it("names only real default accounts as pay accounts", () => {
+  it("names only real default accounts as pay and contract accounts", () => {
     const keys = new Set<string>(DEFAULT_ACCOUNTS.map((account) => account.key));
     for (const key of PAY_ACCOUNT_KEYS) expect(keys.has(key)).toBe(true);
+    // Retainage withheld from a subcontractor is a share of what the subcontract cost (ADR 0062).
+    expect(CONTRACT_ACCOUNT_KEYS).toEqual(["retainage_payable"]);
+    for (const key of CONTRACT_ACCOUNT_KEYS) expect(keys.has(key)).toBe(true);
   });
 });

@@ -230,7 +230,12 @@ describe("trial balance (needs the local PostgreSQL)", () => {
     expect(await offered(cookies.tb_costpay!)).toBe(true);
   });
 
-  it("needs contract cost sight once a contract has posted", async () => {
+  it("needs contract cost sight once a contract has posted, by its source or a Retainage Payable line", async () => {
+    // Retainage withheld from a subcontractor shows what the subcontract cost, whichever source
+    // posted it, such as the seed's opening balances (ADR 0062): caught by the account.
+    await post(draft("opening_balance.posted", "opening_balance", "2026-04-01", "cash", "retainage_payable", "5.00"));
+    await hidden(cookies.tb_costpay!);
+    expect(await offered(cookies.tb_costpay!)).toBe(false);
     await post(
       draft(
         "contract_billing.posted",
@@ -244,7 +249,7 @@ describe("trial balance (needs the local PostgreSQL)", () => {
     await hidden(cookies.tb_costpay!);
     expect(await offered(cookies.tb_costpay!)).toBe(false);
     for (const key of ["tb_full", "owner", "accountant"]) {
-      expect(await read(cookies[key]!)).toMatchObject({ debit: "675.00", credit: "675.00", balanced: true });
+      expect(await read(cookies[key]!)).toMatchObject({ debit: "680.00", credit: "680.00", balanced: true });
       expect(await offered(cookies[key]!)).toBe(true);
     }
   });

@@ -13,6 +13,7 @@ import { seedPlatformAdmin } from "./platform-admin";
 export { seedId, loadDemoCompany } from "./fixtures";
 export { ensureReferenceData, seededTenantId, seededUserId } from "./control";
 export { SEED_PLATFORM_ADMIN, seededPlatformAdminId } from "./platform-admin";
+export { OPENING_MEMO, openingEntryId, seedOpening } from "./opening-balances";
 
 /** What the test-company seed needs. */
 export interface SeedOptions {

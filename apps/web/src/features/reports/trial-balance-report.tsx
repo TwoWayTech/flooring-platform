@@ -230,8 +230,8 @@ export function TrialBalanceView({ options, onRefresh }: { options: ReportOption
         <ReportFallback query={query} className="h-64" label="Loading the trial balance" onRefresh={onRefresh} />
       )}
       <p className="text-muted-foreground text-xs">
-        As of the end of {formatDate(applied)}. Figures come from the books: everything recorded since the company
-        started using the app, not documents from before it.
+        As of the end of {formatDate(applied)}. Figures come from the books: the opening balances entry, if the company
+        has one, for what it held and owed when it started using the app, and everything recorded since.
       </p>
     </Panel>
   );

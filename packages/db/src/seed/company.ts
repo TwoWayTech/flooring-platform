@@ -58,6 +58,7 @@ import { seededUserId } from "./control";
 import { seedId, type DemoCompany } from "./fixtures";
 import { seedHr } from "./hr";
 import { seedMeetings } from "./meetings";
+import { seedOpeningBalances } from "./opening-balances";
 import { userOf, utc } from "./values";
 
 /** Settings groups as stored: branding lives in the control database, tax rules and county rates in their own tables. */
@@ -768,7 +769,7 @@ async function insertInvoices(
 /**
  * Expenses and recurring expenses (P12 part 2; ADR 0041), with the supplier bills that pay-later
  * expenses link to; the other bills arrive with P12 part 3. Seeded history posts no journal entry:
- * the ledger starts at go-live (STATUS, "Opening balances"). Seeded receipts have no bytes, so no
+ * their open balances arrive in the one opening-balance entry (seedOpeningBalances, ADR 0062). Seeded receipts have no bytes, so no
  * attachment rows are written (ADR 0038). A raised recurring draft keeps no creator, so the list
  * shows "Recurring expense" until a person saves it.
  */
@@ -854,8 +855,8 @@ async function seedExpenses(tx: CompanyDb, { fixtures }: DemoCompany): Promise<v
  * Supplier bills for received goods, with their receipts, and supplier payments with their
  * allocations (P12 part 3; ADR 0042). Bills a pay-later expense raised are seeded with expenses;
  * subcontract bills point at their billing, so seedContractBillings writes them, and any payment
- * that pays one, once the billings exist (ADR 0045). Seeded history posts no journal entry (the
- * ledger starts at go-live), and seeded files have no bytes.
+ * that pays one, once the billings exist (ADR 0045). Seeded history posts no journal entry of its own (its
+ * open balances are in the opening-balance entry, ADR 0062), and seeded files have no bytes.
  */
 async function seedPayables(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void> {
   const expenseBills = new Set(fixtures.expenses.flatMap((expense) => (expense.billId ? [expense.billId] : [])));
@@ -1098,7 +1099,7 @@ async function seedContracts(tx: CompanyDb, { fixtures }: DemoCompany): Promise<
  * then the invoices (with their payments) and subcontract bills (with any supplier payment that
  * pays one) they raised, then each billing's link to its document. A billing and its document
  * point at each other, so the billing goes in first without the link. Seeded history posts no
- * journal entry: the ledger starts at go-live (STATUS, "Opening balances").
+ * journal entry of its own: what is still open arrives in the opening-balance entry (ADR 0062).
  */
 async function seedContractBillings(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void> {
   const byName = new Map(fixtures.users.map((user) => [user.name, user.id]));
@@ -1218,8 +1219,9 @@ async function seedWaivers(tx: CompanyDb, { fixtures }: DemoCompany): Promise<vo
  * numbering, roles, user profiles, the supplier directory, the catalog and stock (inventory part 1),
  * purchase orders with their receipts (purchasing part 1), expenses (P12 part 2), bills and
  * supplier payments (P12 part 3), contracts with their billings (contracts parts 1 and 2), and HR
- * people, timesheets and time off (HR part 1), and meetings with their guests (meetings part 1).
- * Business records arrive module by module (docs/real-build-plan.md), each with its own seed.
+ * people, timesheets and time off (HR part 1), meetings with their guests (meetings part 1), and
+ * last the one journal entry that opens the books with what all of that still holds and owes
+ * (ADR 0062). Business records arrive module by module (docs/real-build-plan.md), each with its own seed.
  */
 export async function seedCompany(company: CompanyDb, demo: DemoCompany): Promise<void> {
   await company.transaction(async (tx) => {
@@ -1237,5 +1239,6 @@ export async function seedCompany(company: CompanyDb, demo: DemoCompany): Promis
     await seedWaivers(tx, demo);
     await seedHr(tx, demo);
     await seedMeetings(tx, demo);
+    await seedOpeningBalances(tx, demo);
   });
 }

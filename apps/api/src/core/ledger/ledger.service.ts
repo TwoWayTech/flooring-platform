@@ -8,6 +8,7 @@ import {
   moneyString,
   postingProblem,
   reversedLines,
+  CONTRACT_ACCOUNT_KEYS,
   CONTRACT_SOURCE_TYPES,
   PAY_ACCOUNT_KEYS,
   PAY_SOURCE_TYPES,
@@ -220,41 +221,49 @@ export class LedgerService {
 
   /**
    * What the journal holds that decides who may read it (`seesTrialBalance`; ADR 0055 "Trial
-   * balance"): any contract posting, and any pay posting by its source or its account. Read over all
+   * balance"): any contract posting and any pay posting, each by its source or its account (a line
+   * on Retainage Payable, such as the seed's opening balances, counts as contract; ADR 0062). Read over all
    * time, whatever day the trial balance is asked through, so the rule never depends on the date.
    */
   async trialBalanceFacts(db: CompanyDb): Promise<TrialBalanceFacts> {
-    const [contract] = await db
+    return {
+      hasContractPostings: await this.hasPostings(db, CONTRACT_SOURCE_TYPES, CONTRACT_ACCOUNT_KEYS),
+      hasPayPostings: await this.hasPostings(db, PAY_SOURCE_TYPES, PAY_ACCOUNT_KEYS),
+    };
+  }
+
+  /**
+   * Whether any entry came from one of the sources, or any line sits on one of the accounts. Two
+   * indexed existence checks, not one OR across a join that would scan every line when nothing has
+   * posted (PR review): entries by source type, then lines on the accounts by account id.
+   */
+  private async hasPostings(
+    db: CompanyDb,
+    sources: readonly PostingDraft["sourceType"][],
+    accountKeys: readonly LedgerKey[],
+  ): Promise<boolean> {
+    const [source] = await db
       .select({ id: journalEntries.id })
       .from(journalEntries)
-      .where(inArray(journalEntries.sourceType, [...CONTRACT_SOURCE_TYPES]))
+      .where(inArray(journalEntries.sourceType, [...sources]))
       .limit(1);
-    // Two indexed existence checks, not one OR across a join that would scan every line when no pay
-    // has posted (PR review): entries by source type, then lines on the pay accounts by account id.
-    const [paySource] = await db
-      .select({ id: journalEntries.id })
-      .from(journalEntries)
-      .where(inArray(journalEntries.sourceType, [...PAY_SOURCE_TYPES]))
-      .limit(1);
-    if (paySource) return { hasContractPostings: contract !== undefined, hasPayPostings: true };
-    const payAccounts = await db
+    if (source) return true;
+    const accounts = await db
       .select({ id: ledgerAccounts.id })
       .from(ledgerAccounts)
-      .where(inArray(ledgerAccounts.key, [...PAY_ACCOUNT_KEYS]));
-    const [payLine] =
-      payAccounts.length === 0
-        ? []
-        : await db
-            .select({ id: journalLines.id })
-            .from(journalLines)
-            .where(
-              inArray(
-                journalLines.accountId,
-                payAccounts.map((account) => account.id),
-              ),
-            )
-            .limit(1);
-    return { hasContractPostings: contract !== undefined, hasPayPostings: payLine !== undefined };
+      .where(inArray(ledgerAccounts.key, [...accountKeys]));
+    if (accounts.length === 0) return false;
+    const [line] = await db
+      .select({ id: journalLines.id })
+      .from(journalLines)
+      .where(
+        inArray(
+          journalLines.accountId,
+          accounts.map((account) => account.id),
+        ),
+      )
+      .limit(1);
+    return line !== undefined;
   }
 
   /**
