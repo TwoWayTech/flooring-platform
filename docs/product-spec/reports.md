@@ -344,7 +344,7 @@ No filter is stored in the address. Only `?report=` is.
 
 From `business-report.tsx` and `business-report-pdf.tsx`.
 
-- **Drill-down.** In a table, a row with records has a link that opens a sheet of its records. In a chart, every bar opens the sheet, and a row with no records says "This figure is worked out from other lines." The sheet lists at most 200 records.
+- **Drill-down.** In a table, a row with records has a link that opens a sheet of its records. In a chart, every bar opens the sheet, and a row with no records says "This figure is worked out from other lines." The sheet lists at most 200 records, then a total line (`drillTotal` in `packages/shared/src/reports/drill.ts`; 2026-11-21, click-through #40): "Total" when the records add up to the figure clicked (the row's first money value), else "Total of the records listed" with the figure beside it, as for operating expenses (pay periods have no record), a product category (each whole invoice is listed) or a cut list.
 - **Chart or table.** A section with a `chartColumn` opens as a chart with a Chart / Table switch. Bars are drawn only for values above zero.
 - **CSV.** `toCsvText` writes each section as `Section, Line, <columns>` with its rows and total, then a blank line. Values are raw, not formatted. File: `business-report-<today>.csv`.
 - **PDF.** `BusinessReportPdf`, US Letter portrait, built with `formatNumber` and the company's number settings. File: `business-report-<today>.pdf`.
@@ -354,7 +354,7 @@ From `business-report.tsx` and `business-report-pdf.tsx`.
 
 `ReportsPage` builds them in the browser from `client.list`.
 
-**Filters.** Dates: Last 12 months (default), Last 3 months, This month, This year. `monthsFor` picks the months. Warehouse compares `invoice.locationId` (where it ships from, not `soldAt`), and the Payments report uses the warehouse of the payment's invoice. Category appears only on Sales by category and leaves out Services. Method and Customer appear only on Payments received.
+**Filters.** Dates: Last 12 months (default), Last 3 months, This month, This year. `monthsFor` picks the months. Warehouse compares `invoice.locationId` (where it ships from, not `soldAt`), and the Payments report uses the warehouse of the payment's invoice. On Profit and loss the filter is called Location and lists every live location, showrooms too, as the Business report's Locations filter does (`HUB_LOCATION_FILTERS` in `packages/shared/src/reports/hub-locations.ts`; 2026-11-21). Category appears only on Sales by category and leaves out Services. Method and Customer appear only on Payments received.
 
 ```
 from     = first day of the first month

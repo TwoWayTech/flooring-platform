@@ -45,6 +45,7 @@ export const REPORT_QUERY_MESSAGES = {
   vendor: "Choose a vendor from the list.",
   range: "Choose dates from the list.",
   warehouse: "Choose a warehouse from the list.",
+  location: "Choose a location from the list.",
   category: "Choose a category from the list.",
   method: "Choose a payment method from the list.",
   customer: "Enter at most 100 characters to find a customer.",

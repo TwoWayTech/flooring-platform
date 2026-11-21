@@ -3,5 +3,6 @@ export * from "./catalog";
 export * from "./visibility";
 export * from "./periods";
 export * from "./hub-reports";
+export * from "./hub-locations";
 export * from "./drill";
 export * from "./trial-balance";

@@ -10,7 +10,8 @@ import {
   REPORT_CUSTOMER_SEARCH_MAX,
   REPORT_RANGE_KEYS,
   REPORT_RANGES,
-  warehousesOf,
+  HUB_LOCATION_FILTERS,
+  hubLocationsOf,
   type PaymentMethod,
   type ProductCategory,
   type Report,
@@ -26,7 +27,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@workspace/ui/lib/utils";
 import { downloadText, toCsv } from "@/components/data-table/csv";
 import { ScrollRegion } from "@/components/scroll-region";
-import { ALL_WAREHOUSES, ALL_WAREHOUSES_OPTION, WarehouseSelect } from "@/components/warehouse-select";
 import { useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 import type { ApiClient } from "@/lib/api/contract";
@@ -100,7 +100,18 @@ function Filter({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function ReportTable({ report, label, busy }: { report: Report; label: string; busy: boolean }) {
+function ReportTable({
+  report,
+  label,
+  busy,
+  everywhere,
+}: {
+  report: Report;
+  label: string;
+  busy: boolean;
+  /** The place filter's every-place option, e.g. "All locations". */
+  everywhere: string;
+}) {
   const totals = report.totals;
   return (
     <ScrollRegion label={label} busy={busy} className={cn("border-hairline rounded-md border", busy && "opacity-60")}>
@@ -122,7 +133,7 @@ function ReportTable({ report, label, busy }: { report: Report; label: string; b
           {report.rows.length === 0 ? (
             <tr>
               <td colSpan={report.columns.length} className="text-muted-foreground h-16 px-3">
-                No figures for these filters. Choose a wider date range or all warehouses.
+                No figures for these filters. Choose a wider date range or {everywhere.toLowerCase()}.
               </td>
             </tr>
           ) : null}
@@ -173,16 +184,17 @@ export function HubReportView({
   const { company, settings } = useWorkspace();
   const formatDate = useFormatDate();
   const [range, setRange] = useState<ReportRange>("12m");
-  const [warehouse, setWarehouse] = useState(ALL_WAREHOUSES);
+  const [place, setPlace] = useState(ALL);
   const [category, setCategory] = useState<ProductCategory | typeof ALL>(ALL);
   const [method, setMethod] = useState<PaymentMethod | typeof ALL>(ALL);
   const [customerQuery, setCustomerQuery] = useState("");
   const customer = useDebouncedValue(customerQuery, CUSTOMER_PAUSE_MS);
   const spec = HUB_REPORTS[reportKey];
   const title = REPORT_CATALOG[reportKey].label;
-  const warehouses = warehousesOf(options.locations);
-  // Only a warehouse the server still lists is sent, so a stale pick reads as every warehouse.
-  const chosen = warehouses.find((l) => l.id === warehouse) ?? null;
+  const placeFilter = HUB_LOCATION_FILTERS[reportKey];
+  const places = hubLocationsOf(reportKey, options.locations);
+  // Only a place the server still lists is sent, so a stale pick reads as every place.
+  const chosen = places.find((l) => l.id === place) ?? null;
   const filters: HubFilters = {
     range,
     locationId: chosen?.id ?? null,
@@ -201,7 +213,7 @@ export function HubReportView({
   const paymentFilters = spec.payments
     ? `${filters.method ? `, ${PAYMENT_METHOD_LABELS[filters.method]}` : ""}${filters.customer ? `, customers matching “${filters.customer}”` : ""}`
     : "";
-  const filterText = `${REPORT_RANGES[range]}, ${chosen ? chosen.name : "all warehouses"}${filters.category ? `, ${CATEGORY_LABELS[filters.category]}` : ""}${paymentFilters}.`;
+  const filterText = `${REPORT_RANGES[range]}, ${chosen ? chosen.name : placeFilter.all.toLowerCase()}${filters.category ? `, ${CATEGORY_LABELS[filters.category]}` : ""}${paymentFilters}.`;
   const fileStem = `${reportKey}-${api.today()}`;
   const canExport = options.exports.includes(reportKey);
 
@@ -265,14 +277,20 @@ export function HubReportView({
             </SelectContent>
           </Select>
         </Filter>
-        <Filter label="Warehouse">
-          <WarehouseSelect
-            label="Warehouse"
-            extraOption={ALL_WAREHOUSES_OPTION}
-            locations={options.locations}
-            value={chosen ? chosen.id : ALL_WAREHOUSES}
-            onChange={setWarehouse}
-          />
+        <Filter label={placeFilter.label}>
+          <Select value={chosen ? chosen.id : ALL} onValueChange={setPlace}>
+            <SelectTrigger className="bg-surface h-9 w-52" aria-label={placeFilter.label}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>{placeFilter.all}</SelectItem>
+              {places.map((l) => (
+                <SelectItem key={l.id} value={l.id}>
+                  {l.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </Filter>
         {spec.categories ? (
           <Filter label="Category">
@@ -322,7 +340,7 @@ export function HubReportView({
         ) : null}
       </div>
       {report ? (
-        <ReportTable report={report} label={`${title} table`} busy={busy} />
+        <ReportTable report={report} label={`${title} table`} busy={busy} everywhere={placeFilter.all} />
       ) : (
         <ReportFallback query={query} className="h-64" label="Loading report" onRefresh={onRefresh} />
       )}
